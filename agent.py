@@ -67,7 +67,12 @@ state = {
     "auto_accept": False,
     "queues": [],
     "favorites": [],
+    "lobby": {"queueId": 0, "inQueue": None, "estimated": None},
 }
+STATIC_DIR = BASE_DIR / "static"
+STATIC_TYPES = {".png": "image/png", ".svg": "image/svg+xml", ".webmanifest": "application/manifest+json"}
+pair_code = f"{secrets.randbelow(10**6):06d}"
+pair_failures: list[float] = []
 PREFERRED_QUEUES = [420, 440, 400, 480, 450]
 all_spells: list[dict] = []
 clients: set[web.WebSocketResponse] = set()
@@ -246,6 +251,7 @@ def simplify(session: dict) -> dict:
         "championId": mine.get("championId") or mine.get("championPickIntent") or 0,
         "spells": [mine.get("spell1Id", 0), mine.get("spell2Id", 0)],
         "timer": timer.get("adjustedTimeLeftInPhase", 0),
+        "total": timer.get("totalTimeInPhase", 0),
         "phase": timer.get("phase", ""),
         "position": (mine.get("assignedPosition") or "").upper(),
     }
@@ -482,6 +488,8 @@ async def on_phase(phase):
     state["phase"] = phase
     await broadcast({"type": "phase", "phase": phase})
     await ensure_static()
+    if phase in ("None", "Lobby", "Matchmaking"):
+        await refresh_lobby()
     if phase == "ReadyCheck":
         if state["auto_accept"]:
             await lcu.request(*SIMPLE_ACTIONS["accept"])
@@ -492,6 +500,41 @@ async def on_phase(phase):
         await load_champselect()
     elif phase == "InProgress":
         await notify("La partie démarre", "Retourne sur ton PC", "video_game")
+
+
+async def refresh_lobby():
+    info = {"queueId": 0, "inQueue": None, "estimated": None}
+    status, lobby = await lcu.request("GET", "/lol-lobby/v2/lobby")
+    if status == 200 and isinstance(lobby, dict):
+        info["queueId"] = (lobby.get("gameConfig") or {}).get("queueId", 0)
+    if state["phase"] == "Matchmaking":
+        status, search = await lcu.request("GET", "/lol-matchmaking/v1/search")
+        if status == 200 and isinstance(search, dict):
+            info["inQueue"] = search.get("timeInQueue")
+            info["estimated"] = search.get("estimatedQueueTime")
+    state["lobby"] = info
+    await broadcast({"type": "lobby", **info})
+
+
+async def play(queue_id: int):
+    if state["phase"] == "Matchmaking":
+        return None
+    status, lobby = await lcu.request("GET", "/lol-lobby/v2/lobby")
+    current = (lobby.get("gameConfig") or {}).get("queueId") if status == 200 and isinstance(lobby, dict) else None
+    if current != queue_id:
+        status, data = await lcu.request("POST", "/lol-lobby/v2/lobby", {"queueId": queue_id})
+        if status >= 400:
+            return error_message(status, data)
+    for attempt in range(3):
+        status, data = await lcu.request(*SIMPLE_ACTIONS["search"])
+        if status < 400:
+            return None
+        await asyncio.sleep(0.3)
+    return error_message(status, data)
+
+
+def error_message(status: int, data) -> str:
+    return (data or {}).get("message", f"HTTP {status}") if isinstance(data, dict) else f"HTTP {status}"
 
 
 async def on_session(event_type: str, data):
@@ -601,8 +644,12 @@ async def handle_action(msg: dict):
         return "Client LoL non détecté"
     if kind in SIMPLE_ACTIONS:
         status, data = await lcu.request(*SIMPLE_ACTIONS[kind])
+    elif kind == "play":
+        return await play(int(msg["queueId"]))
     elif kind == "lobby":
         status, data = await lcu.request("POST", "/lol-lobby/v2/lobby", {"queueId": int(msg["queueId"])})
+        if status < 400:
+            await refresh_lobby()
     elif kind == "select":
         cs = state["champselect"]
         if not cs:
@@ -639,7 +686,7 @@ async def handle_action(msg: dict):
     else:
         return "Action inconnue"
     if status >= 400:
-        return (data or {}).get("message", f"HTTP {status}") if isinstance(data, dict) else f"HTTP {status}"
+        return error_message(status, data)
     return None
 
 
@@ -650,8 +697,45 @@ def valid_token(value: str | None) -> bool:
 async def index(request):
     resp = web.FileResponse(BASE_DIR / "index.html", headers={"Cache-Control": "no-store"})
     if valid_token(request.query.get("token")):
-        resp.set_cookie("token", config["token"], max_age=365 * 86400, httponly=True, samesite="Strict")
+        set_token_cookie(resp)
     return resp
+
+
+def set_token_cookie(resp: web.StreamResponse):
+    resp.set_cookie("token", config["token"], max_age=365 * 86400, httponly=True, samesite="Strict")
+
+
+async def pair(request):
+    now = time.monotonic()
+    pair_failures[:] = [t for t in pair_failures if now - t < 60]
+    if len(pair_failures) >= 5:
+        return web.json_response({"error": "Trop d'essais, réessaie dans une minute"}, status=429)
+    try:
+        code = str((await request.json()).get("code", "")).strip()
+    except (ValueError, AttributeError):
+        code = ""
+    if not secrets.compare_digest(code, pair_code):
+        pair_failures.append(now)
+        return web.json_response({"error": "Code incorrect"}, status=403)
+    print(f"Téléphone appairé par code depuis {request.remote}")
+    resp = web.json_response({"token": config["token"]})
+    set_token_cookie(resp)
+    return resp
+
+
+def serve_static(name: str):
+    path = STATIC_DIR / name
+    if not re.fullmatch(r"[\w.-]+", name) or path.suffix not in STATIC_TYPES or not path.is_file():
+        raise web.HTTPNotFound()
+    return web.FileResponse(path, headers={"Content-Type": STATIC_TYPES[path.suffix], "Cache-Control": "public, max-age=86400"})
+
+
+async def static_file(request):
+    return serve_static(request.match_info["name"])
+
+
+async def manifest(_request):
+    return serve_static("manifest.webmanifest")
 
 
 async def asset(request):
@@ -717,6 +801,9 @@ async def main():
     app.router.add_get("/", index)
     app.router.add_get("/ws", ws_handler)
     app.router.add_get("/asset/{tail:.+}", asset)
+    app.router.add_post("/pair", pair)
+    app.router.add_get("/static/{name}", static_file)
+    app.router.add_get("/manifest.webmanifest", manifest)
     runner = web.AppRunner(app)
     await runner.setup()
     await web.TCPSite(runner, "0.0.0.0", HTTP_PORT).start()
@@ -727,6 +814,7 @@ async def main():
     qr.add_data(url)
     qr.print_ascii(invert=True)
     print(url)
+    print(f"Code d'appairage : {pair_code}")
     if config.get("ntfy_topic"):
         print(f"Notifications ntfy : abonne-toi au topic {config['ntfy_topic']}")
     try:

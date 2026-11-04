@@ -15,7 +15,9 @@ Companion perso pour piloter le client League of Legends depuis le téléphone, 
 
 - Lancer le client : RiotClientServices --launch-product=league_of_legends --launch-patchline=live (chemin via /Users/Shared/Riot Games/RiotClientInstalls.json ou RIOT_CLIENT).
 - Lobby (files disponibles lues depuis le client, hors TFT et personnalisées), lancer/annuler la file.
-- Appairage : token dans l'URL du QR, puis cookie (1 an). Favoris de champions dans config.json.
+- Appairage : token dans l'URL du QR, puis cookie (1 an) et localStorage. Ou code à 6 chiffres (régénéré à chaque démarrage, POST /pair, 5 essais/min) pour l'app ajoutée à l'écran d'accueil iOS, qui ne partage pas le stockage de Safari. Favoris de champions dans config.json.
+- Page : app web installable (static/ : manifest, icônes, logo). Un écran par phase (connexion, client fermé, accueil, partie trouvée, champ select avec onglets Champion / Sorts & runes, en jeu, runes). Action "play" = crée le lobby si besoin puis lance la recherche.
+- Design : fond #0B120D, couleur principale #253D2C, accent #8EE3A8. Tokens CSS dans :root de index.html.
 - Accepter/refuser, auto-accept.
 - Champ select : hover (PATCH actions/{id}), lock (POST .../complete), grille filtrée par pickable/bannable, sorts (PATCH my-selection, swap si doublon, filtrés par gameMode), page de runes (PUT /lol-perks/v1/currentpage).
 - Éditeur de pages de runes (hors champ select aussi) : arbres, runes, fragments, nom. Données depuis /lol-perks/v1/styles et /perks, validation côté agent, enregistrement par PUT /lol-perks/v1/pages/{id} (page complète relue puis modifiée).

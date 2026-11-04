@@ -2,149 +2,454 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#253D2C">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="LazyQueue">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+<link rel="icon" href="/static/icon.svg" type="image/svg+xml">
 <title>LazyQueue</title>
 <style>
-body{margin:0;padding:16px;font:16px system-ui,sans-serif;background:#0e1116;color:#e6e6e6}
-button,select,input{font:inherit;padding:12px;border-radius:8px;border:1px solid #333;background:#1b2028;color:inherit}
-button:disabled{opacity:.4}
-button.primary{background:#c89b3c;color:#111;border:0;font-weight:600}
-input[type=text]{width:100%;box-sizing:border-box;margin:8px 0}
-h3{margin:16px 0 4px;font-size:14px;color:#999}
-.row{display:flex;gap:8px;margin:8px 0;align-items:center}
-.row>*{flex:1}
-.hidden{display:none}
-#status{font-size:20px;font-weight:600}
-#err{color:#ff6b6b;min-height:1.2em;margin:4px 0}
-#banner{background:#c89b3c;color:#111;padding:12px;border-radius:8px;font-weight:600}
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(64px,1fr));gap:6px;max-height:45vh;overflow-y:auto}
-.grid button{padding:4px;font-size:11px;overflow:hidden}
-.grid button.sel,.slot.sel{outline:2px solid #c89b3c}
-.grid img{width:100%;display:block;border-radius:4px}
-.slot{display:flex;align-items:center;gap:8px;padding:6px}
-.slot img{width:40px;height:40px;border-radius:4px}
-.trees{display:flex;gap:6px;margin:6px 0}
-.trees button{flex:1;padding:6px;min-width:0}
-.trees button.on{outline:2px solid #c89b3c}
+:root{
+  --bg:#0B120D;--surface:#121C15;--surface-2:#18261C;--line:#223529;
+  --primary:#253D2C;--primary-2:#2F4D38;--accent:#8EE3A8;--accent-ink:#0B1F12;
+  --text:#E9F1EB;--muted:#8DA394;--danger:#F06A5F;--danger-ink:#230B09;--warn:#E8C36A;
+  --radius:18px;--safe-top:env(safe-area-inset-top,0px);--safe-bottom:env(safe-area-inset-bottom,0px);
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;background:var(--bg);color:var(--text);font:16px/1.4 -apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+body{min-height:100dvh;overscroll-behavior-y:none}
+button,input,select{font:inherit;color:inherit}
+button{touch-action:manipulation;cursor:pointer;border:0;background:none;padding:0;user-select:none;-webkit-user-select:none}
+img{-webkit-user-drag:none;user-select:none}
+.hidden{display:none!important}
+
+.top{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:10px;padding:calc(var(--safe-top) + 10px) 16px 10px;background:var(--primary);box-shadow:0 1px 0 rgba(0,0,0,.3)}
+.brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:18px;letter-spacing:-.01em}
+.brand img{width:30px;height:30px;border-radius:8px;display:block}
+.conn{margin-left:auto;display:flex;align-items:center;gap:6px;font-size:12px;color:#C6D8CB}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--warn)}
+.dot.ok{background:var(--accent)}.dot.ko{background:var(--danger)}
+
+main{padding:16px 16px calc(24px + var(--safe-bottom));max-width:560px;margin:0 auto}
+.screen{display:none}
+.screen.active{display:block;animation:enter .2s ease-out}
+@keyframes enter{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin-bottom:12px}
+.label{font-size:12px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);margin:0 0 12px}
+.hero{text-align:center;padding:40px 8px 24px}
+.hero img{width:88px;height:88px;border-radius:22px;margin-bottom:18px}
+.hero h1{margin:0 0 6px;font-size:24px;letter-spacing:-.02em}
+.hero p{margin:0;color:var(--muted)}
+
+.btn{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;min-height:52px;padding:0 18px;border-radius:14px;font-weight:600;background:var(--surface-2);border:1px solid var(--line);transition:transform .08s,background .15s,opacity .15s}
+.btn:active{transform:scale(.97)}
+.btn:disabled{opacity:.38}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:transparent}
+.btn.brand{background:var(--primary);border-color:var(--primary-2)}
+.btn.danger{background:var(--danger);color:var(--danger-ink);border-color:transparent}
+.btn.big{min-height:64px;font-size:18px;border-radius:18px}
+.btn small{font-weight:500;opacity:.7}
+.btn.pending{pointer-events:none;opacity:.75}
+.btn.pending::after{content:"";width:16px;height:16px;border-radius:50%;border:2px solid currentColor;border-right-color:transparent;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.stack>*+*{margin-top:10px}
+.row{display:flex;gap:10px}.row>*{flex:1}
+
+.queues{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.queue{min-height:52px;padding:10px 12px;border-radius:12px;background:var(--surface-2);border:1px solid var(--line);text-align:left;font-size:14px;font-weight:500;line-height:1.25;transition:background .15s,border-color .15s}
+.queue.on{background:var(--primary);border-color:var(--accent)}
+.queue:active{transform:scale(.97)}
+details.more{margin-top:8px}
+details.more summary{list-style:none;color:var(--muted);font-size:14px;padding:8px 2px;cursor:pointer}
+details.more summary::-webkit-details-marker{display:none}
+details.more[open] summary{margin-bottom:6px}
+
+.status{display:flex;align-items:center;gap:14px}
+.status .ring{width:44px;height:44px;border-radius:50%;border:3px solid var(--line);flex:0 0 auto;display:grid;place-items:center}
+.status.searching .ring{border-color:var(--accent);border-right-color:transparent;animation:spin 1.2s linear infinite}
+.status b{display:block;font-size:17px}
+.status span{color:var(--muted);font-size:14px}
+.searchtime{font-variant-numeric:tabular-nums}
+
+.switch{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;min-height:48px;text-align:left}
+.switch i{position:relative;width:50px;height:30px;border-radius:15px;background:var(--line);flex:0 0 auto;transition:background .2s}
+.switch i::after{content:"";position:absolute;top:3px;left:3px;width:24px;height:24px;border-radius:50%;background:var(--text);transition:transform .2s}
+.switch.on i{background:var(--accent)}
+.switch.on i::after{transform:translateX(20px);background:var(--accent-ink)}
+.switch small{display:block;color:var(--muted);font-size:13px}
+
+.found{text-align:center;padding:36px 8px 8px}
+.found .pulse{width:110px;height:110px;margin:0 auto 22px;border-radius:50%;background:var(--primary);display:grid;place-items:center;box-shadow:0 0 0 0 rgba(142,227,168,.5);animation:pulse 1.4s ease-out infinite}
+.found .pulse img{width:64px;height:64px;border-radius:16px}
+@keyframes pulse{to{box-shadow:0 0 0 28px rgba(142,227,168,0)}}
+.found h1{margin:0 0 6px;font-size:28px}
+.found p{margin:0 0 28px;color:var(--muted)}
+
+.phasebar{position:sticky;top:calc(var(--safe-top) + 50px);z-index:15;margin:-16px -16px 12px;padding:12px 16px 0;background:var(--bg)}
+.phaseinfo{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+#csinfo{font-size:18px;font-weight:700}
+#timer{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--muted)}
+.progress{height:4px;border-radius:2px;background:var(--line);margin:10px 0 12px;overflow:hidden}
+#bar{height:100%;width:0;background:var(--muted);border-radius:2px}
+.phasebar.pick #csinfo,.phasebar.pick #timer{color:var(--accent)}.phasebar.pick #bar{background:var(--accent)}
+.phasebar.ban #csinfo,.phasebar.ban #timer{color:var(--danger)}.phasebar.ban #bar{background:var(--danger)}
+.tabs{display:flex;padding:4px;gap:4px;background:var(--surface);border:1px solid var(--line);border-radius:14px;margin-bottom:12px}
+.tabs button{flex:1;min-height:40px;border-radius:10px;font-size:14px;font-weight:600;color:var(--muted);transition:background .15s,color .15s}
+.tabs button.on{background:var(--primary);color:var(--text)}
+
+.search{position:relative;margin-bottom:12px}
+.search input{width:100%;min-height:48px;padding:0 14px 0 42px;border-radius:14px;border:1px solid var(--line);background:var(--surface);font-size:16px;outline:none}
+.search input:focus{border-color:var(--primary-2)}
+.search svg{position:absolute;left:14px;top:50%;transform:translateY(-50%);width:18px;height:18px;color:var(--muted)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(70px,1fr));gap:12px 10px}
+.tile{position:relative;display:flex;flex-direction:column;align-items:center;gap:5px;font-size:11px;color:var(--muted);min-width:0}
+.tile img{width:100%;aspect-ratio:1;border-radius:16px;background:var(--surface-2);border:2px solid transparent;transition:border-color .12s,transform .08s;display:block}
+.tile:active img{transform:scale(.94)}
+.tile span{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tile.sel img{border-color:var(--accent);box-shadow:0 0 0 3px rgba(142,227,168,.22)}
+.tile.sel span{color:var(--text);font-weight:600}
+.banning .tile.sel img{border-color:var(--danger);box-shadow:0 0 0 3px rgba(240,106,95,.25)}
+.tile .star{position:absolute;top:-4px;right:-2px;width:20px;height:20px;border-radius:50%;background:var(--primary);color:var(--warn);font-size:12px;display:grid;place-items:center;border:1px solid var(--primary-2)}
+.empty{color:var(--muted);text-align:center;padding:24px 0}
+
+.actionbar{position:fixed;left:0;right:0;bottom:0;z-index:25;padding:12px 16px calc(12px + var(--safe-bottom));background:rgba(11,18,13,.92);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-top:1px solid var(--line)}
+.actionbar .inner{max-width:560px;margin:0 auto;display:flex;align-items:center;gap:10px}
+.picked{display:flex;align-items:center;gap:10px;min-width:0;flex:1}
+.picked img{width:44px;height:44px;border-radius:12px;background:var(--surface-2);flex:0 0 auto}
+.picked span{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.picked small{display:block;font-weight:400;color:var(--muted);font-size:12px}
+.iconbtn{width:52px;height:52px;flex:0 0 auto;border-radius:14px;background:var(--surface-2);border:1px solid var(--line);display:grid;place-items:center;font-size:20px;color:var(--muted)}
+.iconbtn.on{color:var(--warn)}
+.iconbtn:disabled{opacity:.35}
+.actionbar .btn{width:auto;flex:0 0 auto;min-width:132px}
+#s-cs.active{padding-bottom:96px}
+
+.slots{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.slot{display:flex;align-items:center;gap:10px;padding:10px;border-radius:14px;background:var(--surface-2);border:1px solid var(--line);font-size:14px;font-weight:600;text-align:left;min-height:64px}
+.slot img{width:44px;height:44px;border-radius:10px;flex:0 0 auto}
+.slot small{display:block;color:var(--muted);font-weight:500;font-size:12px}
+.slot.sel{border-color:var(--accent)}
+.spellgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(64px,1fr));gap:10px;margin-top:12px}
+.spellgrid .tile img{border-radius:12px}
+
+select.field,input.field{width:100%;min-height:48px;padding:0 14px;border-radius:14px;border:1px solid var(--line);background:var(--surface-2);font-size:16px;appearance:none;-webkit-appearance:none;outline:none}
+select.field{background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),linear-gradient(135deg,var(--muted) 50%,transparent 50%);background-position:calc(100% - 20px) 50%,calc(100% - 15px) 50%;background-size:5px 5px;background-repeat:no-repeat;padding-right:36px}
+.pagerow{display:flex;gap:10px}.pagerow select{flex:1;min-width:0}.pagerow .btn{width:auto;flex:0 0 auto}
+.reco{display:flex;align-items:center;gap:12px;width:100%;padding:12px;margin-top:8px;border-radius:14px;background:var(--surface-2);border:1px solid var(--line);text-align:left}
+.reco:active{transform:scale(.98)}
+.reco img{width:40px;height:40px;flex:0 0 auto}
+.reco img.tree{width:22px;height:22px}
+.reco span{flex:1;font-weight:600;font-size:15px}
+.reco small{display:block;color:var(--muted);font-size:12px;font-weight:500}
+
+.editor h4{margin:18px 0 8px;font-size:12px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted)}
+.trees{display:flex;gap:6px}
+.trees button{flex:1;min-width:0;padding:8px 0;border-radius:12px;background:var(--surface-2);border:1px solid var(--line)}
+.trees button.on{background:var(--primary);border-color:var(--accent)}
 .trees img{width:28px;height:28px;display:block;margin:0 auto}
-.rrow{display:flex;gap:10px;justify-content:center;margin:8px 0}
-.rrow button{width:48px;height:48px;padding:3px;border-radius:50%;opacity:.35}
-.rrow.key button{width:60px;height:60px}
-.rrow.shard button{width:36px;height:36px}
-.rrow button.on{opacity:1;outline:2px solid #c89b3c}
+.rrow{display:flex;gap:12px;justify-content:center;margin:10px 0}
+.rrow button{width:50px;height:50px;padding:3px;border-radius:50%;opacity:.32;transition:opacity .12s,transform .08s}
+.rrow button:active{transform:scale(.92)}
+.rrow.key button{width:62px;height:62px}
+.rrow.shard button{width:38px;height:38px}
+.rrow button.on{opacity:1;box-shadow:0 0 0 2px var(--accent)}
 .rrow img{width:100%;height:100%;display:block}
-#rdesc{min-height:2.6em;font-size:13px;color:#bbb;margin:8px 0}
-.reco{display:flex;align-items:center;gap:10px;width:100%;margin:6px 0;text-align:left}
-.reco img{width:36px;height:36px;flex:0 0 auto}
-.reco img.tree{width:20px;height:20px}
-.reco span{flex:1;font-size:14px}
-.reco small{display:block;color:#999;font-size:12px}
+#rdesc{min-height:2.8em;font-size:13px;color:var(--muted);margin:12px 0}
+
+.back{display:flex;align-items:center;gap:8px;min-height:44px;margin:-4px 0 8px;color:var(--muted);font-weight:600}
+.pair{display:flex;gap:10px;margin-top:20px}
+.pair input{flex:1;min-width:0;text-align:center;letter-spacing:.3em;font-size:22px;font-weight:700}
+
+#toasts{position:fixed;left:0;right:0;bottom:calc(var(--safe-bottom) + 16px);z-index:30;display:flex;flex-direction:column;align-items:center;gap:8px;padding:0 16px;pointer-events:none}
+body.with-bar #toasts{bottom:calc(var(--safe-bottom) + 92px)}
+.toast{max-width:528px;width:100%;padding:10px 14px;border-radius:12px;background:var(--surface-2);border:1px solid var(--line);box-shadow:0 8px 24px rgba(0,0,0,.4);font-size:14px;animation:enter .2s ease-out}
+.toast b{display:block}
+.toast.error{background:#2A1513;border-color:#5A2622;color:#FFD9D5}
+.toast.info{background:var(--primary);border-color:var(--primary-2)}
 </style>
 </head>
 <body>
-<div class="row" style="margin:0"><div id="status">Connexion...</div><div id="ping" style="flex:0 0 auto;font-size:12px;color:#777"></div></div>
-<div id="banner" class="hidden"></div>
-<div id="err"></div>
-<label class="row" style="justify-content:flex-start"><input type="checkbox" id="auto" style="flex:0"> Auto-accept</label>
+<header class="top">
+  <div class="brand"><img src="/static/icon.svg" alt="">LazyQueue</div>
+  <div class="conn"><span id="ping"></span><span id="dot" class="dot"></span></div>
+</header>
+<div id="toasts"></div>
 
-<section id="offline" class="hidden">
-  <button class="primary" data-action="launch" style="width:100%">Lancer le client</button>
-</section>
-
-<section id="lobby" class="hidden">
-  <div class="row">
-    <select id="queue">
-      <option value="420">Classée Solo/Duo</option>
-      <option value="440">Classée Flex</option>
-      <option value="400">Normale Draft</option>
-      <option value="480">Partie accélérée</option>
-      <option value="450">ARAM</option>
-    </select>
-    <button data-action="lobby">Créer lobby</button>
-  </div>
-  <div class="row">
-    <button class="primary" data-action="search">Lancer</button>
-    <button data-action="cancel">Annuler</button>
+<main>
+<section class="screen active" id="s-connect">
+  <div class="hero">
+    <img src="/static/icon.svg" alt="">
+    <h1>LazyQueue</h1>
+    <p id="status">Connexion…</p>
+    <form id="pairform" class="pair hidden" autocomplete="off">
+      <input id="paircode" class="field" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="000000" aria-label="Code d'appairage">
+      <button class="btn primary" id="pairbtn" style="width:auto">Appairer</button>
+    </form>
   </div>
 </section>
 
-<section id="ready" class="hidden">
-  <div class="row">
-    <button class="primary" data-action="accept">Accepter</button>
-    <button data-action="decline">Refuser</button>
+<section class="screen" id="s-offline">
+  <div class="hero">
+    <img src="/static/icon.svg" alt="">
+    <h1>Client fermé</h1>
+    <p>League of Legends n'est pas lancé sur ton PC.</p>
+  </div>
+  <button class="btn primary big" id="launch">Lancer le client</button>
+</section>
+
+<section class="screen" id="s-home">
+  <div class="card">
+    <div class="status" id="homestatus">
+      <div class="ring"></div>
+      <div><b id="hometitle">Prêt à jouer</b><span id="homesub">Choisis un mode</span></div>
+    </div>
+  </div>
+  <div class="card" id="modecard">
+    <p class="label">Mode de jeu</p>
+    <div class="queues" id="queues"></div>
+    <details class="more" id="morequeues"><summary>Autres modes</summary><div class="queues" id="queues2"></div></details>
+  </div>
+  <div class="stack">
+    <button class="btn primary big" id="play">Jouer</button>
+    <button class="btn big hidden" id="cancel">Annuler la recherche</button>
+  </div>
+  <div class="card" style="margin-top:12px">
+    <button class="switch" id="auto"><span>Acceptation automatique<small>Accepte la partie dès qu'elle est trouvée</small></span><i></i></button>
+  </div>
+  <button class="btn brand" id="openrunes">Pages de runes</button>
+</section>
+
+<section class="screen" id="s-ready">
+  <div class="found">
+    <div class="pulse"><img src="/static/icon.svg" alt=""></div>
+    <h1>Partie trouvée</h1>
+    <p id="readysub">Accepte avant la fin du compte à rebours</p>
+  </div>
+  <div class="stack">
+    <button class="btn primary big" id="accept">Accepter</button>
+    <button class="btn" id="decline">Refuser</button>
   </div>
 </section>
 
-<section id="cs" class="hidden">
-  <div class="row"><span id="csinfo"></span><span id="timer" style="text-align:right"></span></div>
-  <input type="text" id="filter" placeholder="Champion" autocomplete="off">
-  <div id="grid" class="grid"></div>
-  <div class="row"><button id="fav" style="flex:0 0 auto">★ Favori</button><button class="primary" id="lock">Verrouiller</button></div>
-
-  <h3>Sorts d'invocateur</h3>
-  <div class="row">
-    <button class="slot" data-slot="0"></button>
-    <button class="slot" data-slot="1"></button>
+<section class="screen" id="s-cs">
+  <div class="phasebar" id="phasebar">
+    <div class="phaseinfo"><span id="csinfo">Sélection</span><span id="timer"></span></div>
+    <div class="progress"><div id="bar"></div></div>
+    <div class="tabs"><button data-tab="champ" class="on">Champion</button><button data-tab="loadout">Sorts &amp; runes</button></div>
   </div>
-  <div id="spellgrid" class="grid hidden"></div>
-
+  <div id="tab-champ">
+    <label class="search">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      <input type="search" id="filter" placeholder="Rechercher un champion" autocomplete="off" autocorrect="off" spellcheck="false">
+    </label>
+    <div id="grid" class="grid"></div>
+    <div id="gridempty" class="empty hidden">Aucun champion</div>
+  </div>
+  <div id="tab-loadout" class="hidden">
+    <div class="card">
+      <p class="label">Sorts d'invocateur</p>
+      <div class="slots">
+        <button class="slot" data-slot="0"></button>
+        <button class="slot" data-slot="1"></button>
+      </div>
+      <div id="spellgrid" class="spellgrid hidden"></div>
+    </div>
+    <div id="loadouthost"></div>
+  </div>
+  <div class="actionbar" id="actionbar">
+    <div class="inner">
+      <div class="picked"><img id="selimg" alt=""><span id="selname">Aucun champion<small id="selhint"></small></span></div>
+      <button class="iconbtn" id="fav" aria-label="Favori">★</button>
+      <button class="btn primary" id="lock">Verrouiller</button>
+    </div>
+  </div>
 </section>
 
-<section id="runesec" class="hidden">
-  <h3>Page de runes</h3>
-  <div class="row"><select id="runes"></select><button id="editrunes" style="flex:0 0 auto">Modifier</button></div>
+<section class="screen" id="s-game">
+  <div class="hero">
+    <img src="/static/icon.svg" alt="">
+    <h1 id="gametitle">Partie en cours</h1>
+    <p>Bon jeu ! Retourne sur ton PC.</p>
+  </div>
+  <button class="btn brand" id="openrunes2">Pages de runes</button>
+</section>
+
+<section class="screen" id="s-runes">
+  <button class="back" id="runesback">‹ Retour</button>
+  <div id="runeshost"></div>
+</section>
+</main>
+
+<div id="runesec" class="card">
+  <p class="label">Page de runes</p>
+  <div class="pagerow"><select id="runes" class="field"></select><button class="btn" id="editrunes">Modifier</button></div>
   <div id="recos" class="hidden">
-    <h3 id="recotitle"></h3>
+    <p class="label" id="recotitle" style="margin:18px 0 4px"></p>
     <div id="recolist"></div>
   </div>
-  <div id="editor" class="hidden">
-    <input type="text" id="rname" maxlength="25" placeholder="Nom de la page" autocomplete="off">
-    <h3>Arbre principal</h3>
+  <div id="editor" class="editor hidden">
+    <h4>Nom</h4>
+    <input type="text" id="rname" class="field" maxlength="25" placeholder="Nom de la page" autocomplete="off">
+    <h4>Arbre principal</h4>
     <div id="rprim" class="trees"></div>
     <div id="rprimrows"></div>
-    <h3>Arbre secondaire</h3>
+    <h4>Arbre secondaire</h4>
     <div id="rsub" class="trees"></div>
     <div id="rsubrows"></div>
-    <h3>Fragments</h3>
+    <h4>Fragments</h4>
     <div id="rshards"></div>
     <div id="rdesc"></div>
-    <div class="row"><button id="rcancel">Annuler</button><button class="primary" id="rsave">Enregistrer</button></div>
+    <div class="row"><button class="btn" id="rcancel">Annuler</button><button class="btn primary" id="rsave">Enregistrer</button></div>
   </div>
-</section>
+</div>
 
 <script>
 const $ = id => document.getElementById(id);
 const ICON = id => `/asset/v1/champion-icons/${id}.png`;
-const PHASES = {Offline: "Client fermé", None: "Menu", Lobby: "Lobby", Matchmaking: "Recherche...",
-  ReadyCheck: "Partie trouvée", ChampSelect: "Sélection", InProgress: "En jeu",
-  WaitingForStats: "Fin de partie", EndOfGame: "Fin de partie"};
+const READY_TIME = 10000;
+const store = {
+  get: k => { try { return localStorage.getItem(k); } catch (_) { return null; } },
+  set: (k, v) => { try { localStorage.setItem(k, v); } catch (_) {} },
+};
 
 let token = new URLSearchParams(location.search).get("token");
-try {
-  if (token) localStorage.setItem("token", token); else token = localStorage.getItem("token");
-} catch (_) {}
+if (token) store.set("token", token); else token = store.get("token");
 history.replaceState(null, "", "/");
 
-let ws, champions = [], spells = [], pickable = [], bannable = [], favorites = [], cs = null;
-let runeStyles = [], perks = {}, runePages = [], draft = null, recommended = null, phase = "Offline";
-let selected = null, actionId = null, deadline = 0, slot = null;
+let ws = null, connected = false, phase = "Offline", overlay = null;
+let champions = [], spells = [], pickable = [], bannable = [], favorites = [], queues = [];
+let cs = null, selected = null, actionId = null, deadline = 0, total = 0, slot = null, spellOverride = null;
+let runeStyles = [], perks = {}, runePages = [], draft = null, recommended = null;
+let lobby = {queueId: 0}, searchStart = 0, estimated = 0, readyStart = 0, accepted = false;
+let chosenQueue = +store.get("queue") || 0;
 
 function send(msg) {
-  if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
+  if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify(msg)); return true; }
+  toast("Pas connecté à l'agent", "error");
+  return false;
+}
+
+function pending(el, on = true) { el.classList.toggle("pending", on); }
+function clearPending() { document.querySelectorAll(".pending").forEach(el => el.classList.remove("pending")); }
+
+function toast(text, kind = "info", title = "") {
+  const t = document.createElement("div");
+  t.className = "toast " + kind;
+  if (title) { const b = document.createElement("b"); b.textContent = title; t.append(b); }
+  t.append(text);
+  $("toasts").append(t);
+  while ($("toasts").children.length > 2) $("toasts").firstChild.remove();
+  setTimeout(() => t.remove(), kind === "error" ? 4500 : 2500);
+}
+function showError(msg) { clearPending(); toast(msg, "error"); }
+
+/* ---------- écrans ---------- */
+function screenFor(p) {
+  if (!connected) return "connect";
+  if (overlay) return overlay;
+  if (p === "Offline") return "offline";
+  if (p === "ReadyCheck") return "ready";
+  if (p === "ChampSelect") return "cs";
+  if (["GameStart", "InProgress", "Reconnect"].includes(p)) return "game";
+  return "home";
+}
+
+function render() {
+  const target = "s-" + screenFor(phase);
+  document.querySelectorAll(".screen").forEach(s => s.classList.toggle("active", s.id === target));
+  document.body.classList.toggle("with-bar", target === "s-cs" && !$("actionbar").classList.contains("hidden"));
+  placeRunes();
+  $("dot").className = "dot " + (connected ? (phase === "Offline" ? "" : "ok") : "ko");
 }
 
 function setPhase(p) {
-  $("status").textContent = PHASES[p] || p;
-  $("offline").classList.toggle("hidden", p !== "Offline");
-  $("lobby").classList.toggle("hidden", !["None", "Lobby", "Matchmaking"].includes(p));
-  $("ready").classList.toggle("hidden", p !== "ReadyCheck");
-  $("cs").classList.toggle("hidden", p !== "ChampSelect");
-  $("runesec").classList.toggle("hidden", p === "Offline");
+  const prev = phase;
   phase = p;
+  if (["ReadyCheck", "ChampSelect"].includes(p)) overlay = null;
+  if (p === "Matchmaking" && prev !== "Matchmaking" && !searchStart) searchStart = Date.now();
+  if (p !== "Matchmaking") searchStart = 0;
+  if (p === "ReadyCheck" && prev !== "ReadyCheck") { readyStart = Date.now(); accepted = false; renderReady(); }
+  if (draft && prev !== p && (prev === "ChampSelect" || ["ReadyCheck", "ChampSelect"].includes(p))) closeEditor();
+  if (prev !== p) { clearPending(); window.scrollTo(0, 0); }
+  renderHome();
   renderRecos();
-  if (p !== "ReadyCheck" && p !== "ChampSelect") $("banner").classList.add("hidden");
+  render();
 }
 
+function openOverlay(name) { overlay = name; render(); window.scrollTo(0, 0); }
+function closeOverlay() { overlay = null; if (draft) closeEditor(); render(); }
+
+function placeRunes() {
+  const host = screenFor(phase) === "runes" ? $("runeshost") : $("loadouthost");
+  if ($("runesec").parentNode !== host) host.append($("runesec"));
+}
+
+/* ---------- accueil ---------- */
+const PHASE_TEXT = {
+  None: ["Prêt à jouer", "Choisis un mode"],
+  Lobby: ["Lobby prêt", ""],
+  Matchmaking: ["Recherche en cours", ""],
+  EndOfGame: ["Partie terminée", "Relance une partie quand tu veux"],
+  WaitingForStats: ["Partie terminée", "Calcul des statistiques"],
+  PreEndOfGame: ["Partie terminée", ""],
+};
+
+function queueName(id) { const q = queues.find(q => q.id === id); return q ? q.name : ""; }
+
+function renderQueues() {
+  if (!chosenQueue || !queues.some(q => q.id === chosenQueue)) chosenQueue = lobby.queueId && queues.some(q => q.id === lobby.queueId) ? lobby.queueId : (queues[0] || {}).id || 0;
+  const make = q => {
+    const b = document.createElement("button");
+    b.className = "queue" + (q.id === chosenQueue ? " on" : "");
+    b.dataset.queue = q.id;
+    b.textContent = q.name;
+    b.onclick = () => { chosenQueue = q.id; store.set("queue", q.id); renderQueues(); renderHome(); };
+    return b;
+  };
+  const main = queues.slice(0, 6), rest = queues.slice(6);
+  $("queues").replaceChildren(...main.map(make));
+  $("queues2").replaceChildren(...rest.map(make));
+  $("morequeues").classList.toggle("hidden", !rest.length);
+  if (rest.some(q => q.id === chosenQueue)) $("morequeues").open = true;
+}
+
+function renderHome() {
+  const [title, sub] = PHASE_TEXT[phase] || ["Prêt à jouer", ""];
+  const searching = phase === "Matchmaking";
+  $("hometitle").textContent = title;
+  $("homesub").textContent = phase === "Lobby" ? queueName(lobby.queueId) || "Lobby" : sub;
+  $("homestatus").classList.toggle("searching", searching);
+  $("play").classList.toggle("hidden", searching);
+  $("cancel").classList.toggle("hidden", !searching);
+  $("modecard").classList.toggle("hidden", searching);
+  const inLobby = phase === "Lobby" && lobby.queueId === chosenQueue;
+  $("play").replaceChildren(inLobby ? "Lancer la file" : "Jouer");
+  if (!inLobby && queueName(chosenQueue)) { const s = document.createElement("small"); s.textContent = queueName(chosenQueue); $("play").append(s); }
+  tickSearch();
+}
+
+function fmt(ms) { const s = Math.max(0, Math.floor(ms / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; }
+function tickSearch() {
+  if (phase !== "Matchmaking") return;
+  const el = document.createElement("span");
+  el.className = "searchtime";
+  el.textContent = fmt(Date.now() - (searchStart || Date.now())) + (estimated ? ` · estimé ${fmt(estimated * 1000)}` : "");
+  $("homesub").replaceChildren(el);
+}
+
+function renderReady() {
+  $("accept").textContent = accepted ? "Acceptée" : "Accepter";
+  $("accept").disabled = accepted;
+  $("decline").classList.toggle("hidden", accepted);
+  $("readysub").textContent = accepted ? "En attente des autres joueurs…" : `Accepte avant la fin du compte à rebours · ${Math.max(0, Math.ceil((READY_TIME - (Date.now() - readyStart)) / 1000))} s`;
+}
+
+/* ---------- champ select ---------- */
 function target() {
   if (selected) return selected;
   if (!cs) return null;
@@ -154,64 +459,98 @@ function target() {
   return pos(cs.championId);
 }
 
-function highlight() {
-  const t = target();
-  for (const b of $("grid").children) b.classList.toggle("sel", +b.dataset.id === t);
-  $("lock").disabled = !(cs && cs.action && t);
-  $("fav").disabled = !t;
-  $("fav").textContent = t && favorites.includes(t) ? "Retirer des favoris" : "★ Favori";
-}
+function champName(id) { const c = champions.find(c => c.id === id); return c ? c.name : ""; }
 
 function renderCs(data) {
+  const prevAction = cs && cs.action ? cs.action.id : null;
   cs = data;
-  if (!data) { selected = null; actionId = null; deadline = 0; slot = null; renderSpells(); return; }
+  if (!data) { selected = null; actionId = null; deadline = 0; slot = null; spellOverride = null; renderSpells(); return; }
   const a = data.action;
   const id = a ? a.id : null;
-  if (id !== actionId) { actionId = id; selected = null; renderGrid(); }
+  if (id !== actionId) { actionId = id; selected = null; pending($("lock"), false); renderGrid(); }
+  if (spellOverride && data.spells[0] === spellOverride[0] && data.spells[1] === spellOverride[1]) spellOverride = null;
   deadline = Date.now() + data.timer;
-  $("csinfo").textContent = a ? (a.type === "ban" ? "À toi de bannir" : "À toi de choisir")
-    : data.phase === "PLANNING" ? "Pré-sélection" : data.phase === "FINALIZATION" ? "Finalisation" : "En attente";
-  $("lock").textContent = a ? (a.type === "ban" ? "Bannir" : "Verrouiller")
-    : data.phase === "PLANNING" ? "Pré-sélection (pas encore ton tour)" : "Pas encore ton tour";
-  highlight();
+  total = data.total || data.timer;
+  const kind = a ? a.type : (data.phase === "PLANNING" ? "plan" : "wait");
+  $("phasebar").className = "phasebar " + (kind === "ban" ? "ban" : kind === "pick" ? "pick" : "");
+  $("csinfo").textContent = kind === "ban" ? "À toi de bannir" : kind === "pick" ? "À toi de choisir"
+    : kind === "plan" ? "Pré-sélection" : data.phase === "FINALIZATION" ? "Finalisation" : "En attente";
+  $("grid").classList.toggle("banning", kind === "ban");
+  updateActionbar();
   renderSpells();
 }
 
-function tile(icon, label, isSel, onclick, id) {
-  const b = document.createElement("button");
-  if (id) b.dataset.id = id;
-  const img = document.createElement("img");
-  img.loading = "lazy";
-  img.src = icon;
-  b.append(img, label);
-  if (isSel) b.className = "sel";
-  b.onclick = onclick;
-  return b;
+function updateActionbar() {
+  const t = target();
+  const a = cs && cs.action;
+  for (const b of $("grid").children) b.classList.toggle("sel", +b.dataset.id === t);
+  $("selimg").src = t ? ICON(t) : "/static/icon.svg";
+  $("selname").firstChild.textContent = t ? champName(t) : "Aucun champion";
+  $("selhint").textContent = !cs ? "" : a ? (a.type === "ban" ? "à bannir" : "à verrouiller") : cs.phase === "PLANNING" ? "pré-sélection" : "pas encore ton tour";
+  $("lock").textContent = a ? (a.type === "ban" ? "Bannir" : "Verrouiller") : "Pas ton tour";
+  $("lock").className = "btn " + (a && a.type === "ban" ? "danger" : "primary") + ($("lock").classList.contains("pending") ? " pending" : "");
+  $("lock").disabled = !(a && t);
+  $("fav").disabled = !t;
+  $("fav").classList.toggle("on", !!t && favorites.includes(t));
 }
 
 const norm = s => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
+let gridKey = "";
 
 function renderGrid() {
-  const q = norm($("filter").value);
   const banning = cs && cs.action && cs.action.type === "ban";
   const list = banning ? bannable : pickable;
   const allowed = new Set(list.length > 1 ? list : []);
   const fav = new Set(favorites);
-  const seen = new Set();
-  $("grid").replaceChildren(...champions
-    .filter(c => (allowed.size ? allowed.has(c.id) : !seen.has(c.name) && seen.add(c.name)) && norm(c.name).includes(q))
-    .sort((a, b) => fav.has(b.id) - fav.has(a.id) || (q && norm(b.name).startsWith(q) - norm(a.name).startsWith(q)))
-    .map(c => tile(ICON(c.id), (fav.has(c.id) ? "★ " : "") + c.name, false, () => {
-      selected = c.id;
-      send({action: "select", championId: c.id});
-      highlight();
-    }, c.id)));
-  highlight();
+  const key = JSON.stringify([champions.length, [...allowed], favorites]);
+  if (key !== gridKey) {
+    gridKey = key;
+    const seen = new Set();
+    const items = champions
+      .filter(c => allowed.size ? allowed.has(c.id) : !seen.has(c.name) && seen.add(c.name))
+      .sort((a, b) => fav.has(b.id) - fav.has(a.id));
+    $("grid").replaceChildren(...items.map(c => {
+      const b = document.createElement("button");
+      b.className = "tile";
+      b.dataset.id = c.id;
+      b.dataset.name = norm(c.name);
+      const img = document.createElement("img");
+      img.src = ICON(c.id); img.alt = ""; img.width = 70; img.height = 70; img.loading = "lazy"; img.decoding = "async";
+      const span = document.createElement("span");
+      span.textContent = c.name;
+      b.append(img, span);
+      if (fav.has(c.id)) { const s = document.createElement("i"); s.className = "star"; s.textContent = "★"; b.append(s); }
+      b.onclick = () => {
+        selected = c.id;
+        updateActionbar();
+        send({action: "select", championId: c.id});
+      };
+      return b;
+    }));
+  }
+  applyFilter();
+  updateActionbar();
+}
+
+function applyFilter() {
+  const q = norm($("filter").value);
+  let shown = 0;
+  for (const b of $("grid").children) {
+    const ok = !q || b.dataset.name.includes(q);
+    b.hidden = !ok;
+    if (ok) shown++;
+  }
+  if (q) {
+    const items = [...$("grid").children].filter(b => !b.hidden);
+    const starts = items.filter(b => b.dataset.name.startsWith(q));
+    if (starts.length && starts[0] !== items[0]) starts.reverse().forEach(b => $("grid").prepend(b));
+  }
+  $("gridempty").classList.toggle("hidden", shown > 0 || !$("grid").children.length);
 }
 
 let spellKey = "";
 function renderSpells() {
-  const current = cs ? cs.spells : [0, 0];
+  const current = spellOverride || (cs ? cs.spells : [0, 0]);
   const key = JSON.stringify([current, slot, spells.map(s => s.id)]);
   if (key === spellKey) return;
   spellKey = key;
@@ -219,37 +558,42 @@ function renderSpells() {
     const i = +b.dataset.slot;
     const s = spells.find(x => x.id === current[i]);
     b.classList.toggle("sel", slot === i);
-    b.replaceChildren();
-    if (s) { const img = document.createElement("img"); img.src = "/asset/" + s.icon; b.append(img); }
-    b.append(s ? s.name : (i ? "F" : "D"));
+    const img = document.createElement("img");
+    img.src = s ? "/asset/" + s.icon : "/static/icon.svg";
+    img.alt = "";
+    const text = document.createElement("span");
+    const small = document.createElement("small");
+    small.textContent = i ? "Touche F" : "Touche D";
+    text.append(s ? s.name : "Choisir", small);
+    b.replaceChildren(img, text);
   });
   $("spellgrid").classList.toggle("hidden", slot === null);
   if (slot === null) return;
   const open = slot;
-  $("spellgrid").replaceChildren(...spells.map(s => tile("/asset/" + s.icon, s.name, s.id === current[open], () => {
-    const next = [current[0] || 0, current[1] || 0];
-    const other = 1 - open;
-    if (next[other] === s.id) next[other] = next[open];
-    next[open] = s.id;
-    send({action: "spells", spell1Id: next[0], spell2Id: next[1]});
-    slot = null;
-    renderSpells();
-  })));
-}
-
-function renderQueues(queues) {
-  if (!queues || !queues.length) return;
-  let saved = $("queue").value;
-  try { saved = localStorage.getItem("queue") || saved; } catch (_) {}
-  $("queue").replaceChildren(...queues.map(q => {
-    const o = document.createElement("option");
-    o.value = q.id;
-    o.textContent = q.name;
-    o.selected = String(q.id) === saved;
-    return o;
+  $("spellgrid").replaceChildren(...spells.map(s => {
+    const b = document.createElement("button");
+    b.className = "tile" + (s.id === current[open] ? " sel" : "");
+    b.dataset.spell = s.id;
+    const img = document.createElement("img");
+    img.src = "/asset/" + s.icon; img.alt = "";
+    const span = document.createElement("span");
+    span.textContent = s.name;
+    b.append(img, span);
+    b.onclick = () => {
+      const next = [current[0] || 0, current[1] || 0];
+      const other = 1 - open;
+      if (next[other] === s.id) next[other] = next[open];
+      next[open] = s.id;
+      spellOverride = next;
+      slot = null;
+      renderSpells();
+      send({action: "spells", spell1Id: next[0], spell2Id: next[1]});
+    };
+    return b;
   }));
 }
 
+/* ---------- runes ---------- */
 function renderRunes(pages) {
   runePages = pages;
   $("runes").replaceChildren(...pages.map(p => {
@@ -269,21 +613,23 @@ const shardRows = st => rows(st, s => s.type === "kStatMod");
 
 function renderRecos() {
   const r = recommended;
-  const show = phase === "ChampSelect" && r && r.pages.length && runeStyles.length;
+  const show = phase === "ChampSelect" && r && r.pages && r.pages.length && runeStyles.length;
   $("recos").classList.toggle("hidden", !show);
   if (!show) return;
-  const champ = champions.find(c => c.id === r.championId);
-  $("recotitle").textContent = `Recommandées pour ${champ ? champ.name : "ton champion"}`;
+  const name = champName(r.championId);
+  $("recotitle").textContent = `Recommandées pour ${name || "ton champion"}`;
   $("recolist").replaceChildren(...r.pages.map((p, i) => {
     const b = document.createElement("button");
     b.className = "reco";
     b.dataset.reco = i;
     const key = document.createElement("img");
     key.src = "/asset/" + ((perks[p.perks[0]] || {}).icon || "");
+    key.alt = "";
     const trees = [p.primary, p.sub].map(id => {
       const img = document.createElement("img");
       img.className = "tree";
       img.src = "/asset/" + ((style(id) || {}).icon || "");
+      img.alt = "";
       return img;
     });
     const text = document.createElement("span");
@@ -291,21 +637,22 @@ function renderRecos() {
     small.textContent = p.label;
     text.append(p.keystone, small);
     b.append(key, text, ...trees);
-    b.onclick = () => applyReco(p, champ);
+    b.onclick = () => applyReco(p, name);
     return b;
   }));
 }
 
-function applyReco(reco, champ) {
+function applyReco(reco, name) {
   if (!openEditor()) return;
   draft.primary = reco.primary;
   draft.sub = reco.sub;
   draft.prim = reco.perks.slice(0, 4);
   draft.sec = reco.perks.slice(4, 6);
   draft.shards = reco.perks.slice(6, 9);
-  $("rname").value = `${champ ? champ.name + " " : ""}${reco.keystone}`.slice(0, 25);
+  $("rname").value = `${name ? name + " " : ""}${reco.keystone}`.slice(0, 25);
   $("rdesc").textContent = "Recommandation chargée : vérifie puis appuie sur Enregistrer.";
   renderEditor();
+  $("editor").scrollIntoView({behavior: "smooth", block: "start"});
 }
 
 function openEditor() {
@@ -325,6 +672,7 @@ function openEditor() {
 
 function closeEditor() {
   draft = null;
+  pending($("rsave"), false);
   $("editor").classList.add("hidden");
   $("editrunes").classList.remove("hidden");
   renderRunes(runePages);
@@ -411,67 +759,148 @@ function renderEditor() {
   $("rsave").textContent = done ? "Enregistrer" : "Page incomplète";
 }
 
-function showError(msg) {
-  $("err").textContent = msg;
-  setTimeout(() => { if ($("err").textContent === msg) $("err").textContent = ""; }, 8000);
-}
-
-function alertUser(title, message) {
-  $("banner").textContent = `${title} - ${message}`;
-  $("banner").classList.remove("hidden");
-  if (navigator.vibrate) navigator.vibrate([300, 100, 300]);
-}
+/* ---------- connexion ---------- */
+let retryDelay = 250, retryTimer = null, rtts = [];
 
 function connect() {
   if (ws && (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN)) return;
-  ws = new WebSocket(`ws://${location.host}/ws?token=${encodeURIComponent(token || "")}`);
-  ws.onmessage = e => {
-    const m = JSON.parse(e.data);
-    switch (m.type) {
-      case "init":
-        champions = m.champions; spells = m.spells; pickable = m.pickable; bannable = m.bannable; favorites = m.favorites || [];
-        runeStyles = m.rune_styles || []; perks = m.perks || {}; recommended = m.recommended;
-        $("auto").checked = m.auto_accept;
-        setPhase(m.phase); renderCs(m.champselect); renderGrid(); renderRunes(m.rune_pages); renderQueues(m.queues); break;
-      case "queues": renderQueues(m.queues); break;
-      case "favorites": favorites = m.favorites; renderGrid(); break;
-      case "rune_data": runeStyles = m.styles; perks = m.perks; renderEditor(); renderRecos(); break;
-      case "recommended": recommended = m; renderRecos(); break;
-      case "rune_saved": if (draft && draft.id === m.pageId) { closeEditor(); alertUser("Runes", "Page enregistrée"); } break;
-      case "phase": setPhase(m.phase); break;
-      case "champselect": renderCs(m.data); break;
-      case "champions": champions = m.champions; renderGrid(); break;
-      case "cs_data":
-        pickable = m.pickable; bannable = m.bannable; spells = m.spells;
-        renderGrid(); renderSpells(); break;
-      case "rune_pages": renderRunes(m.pages); break;
-      case "auto_accept": $("auto").checked = m.value; break;
-      case "notify": alertUser(m.title, m.message); break;
-      case "error": showError(m.message); break;
-      case "pong": onPong(m.t); break;
-    }
-  };
+  ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws?token=${encodeURIComponent(token || "")}`);
   ws.onopen = () => { retryDelay = 250; ping(); };
+  ws.onmessage = e => handle(JSON.parse(e.data));
   ws.onclose = async () => {
-    let msg = "Agent injoignable (même Wi-Fi ? agent lancé ?)";
+    const was = connected;
+    connected = false;
+    let msg = "Agent injoignable. Vérifie que l'agent tourne et que tu es sur le même Wi-Fi.";
+    let unpaired = false;
     try {
-      const r = await fetch(`/ws?token=${encodeURIComponent(token || "")}`);
-      if (r.status === 403) msg = "Non appairé : scanne le QR code affiché dans le terminal du Mac";
+      const r = await fetch(`/ws?token=${encodeURIComponent(token || "")}`, {cache: "no-store"});
+      unpaired = r.status === 403;
     } catch (_) {}
-    $("status").textContent = msg;
+    if (unpaired) msg = "Entre le code d'appairage affiché sur ton PC.";
+    $("status").textContent = was && !unpaired ? "Reconnexion…" : msg;
+    $("pairform").classList.toggle("hidden", !unpaired);
+    $("ping").textContent = "";
+    render();
     clearTimeout(retryTimer);
-    retryTimer = setTimeout(connect, retryDelay);
-    retryDelay = Math.min(retryDelay * 2, 2000);
+    if (!unpaired) { retryTimer = setTimeout(connect, retryDelay); retryDelay = Math.min(retryDelay * 2, 2000); }
   };
 }
 
-let retryDelay = 250, retryTimer = null, rtts = [];
-function ping() { send({action: "ping", t: performance.now()}); }
+function ping() { if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({action: "ping", t: performance.now()})); }
 function onPong(t) {
   rtts = [...rtts.slice(-9), performance.now() - t];
   const sorted = [...rtts].sort((a, b) => a - b);
   $("ping").textContent = `${Math.round(sorted[sorted.length >> 1])} ms`;
 }
+
+function handle(m) {
+  switch (m.type) {
+    case "init":
+      connected = true;
+      champions = m.champions; spells = m.spells; pickable = m.pickable; bannable = m.bannable; favorites = m.favorites || [];
+      runeStyles = m.rune_styles || []; perks = m.perks || {}; recommended = m.recommended; queues = m.queues || [];
+      lobby = m.lobby || lobby;
+      setAuto(m.auto_accept);
+      renderQueues(); renderRunes(m.rune_pages); renderCs(m.champselect); renderGrid();
+      setPhase(m.phase);
+      break;
+    case "phase": setPhase(m.phase); break;
+    case "lobby":
+      lobby = m;
+      if (m.inQueue != null) searchStart = Date.now() - m.inQueue * 1000;
+      estimated = m.estimated || 0;
+      if (phase === "Lobby" && !queues.some(q => q.id === chosenQueue)) chosenQueue = m.queueId;
+      clearPending(); renderQueues(); renderHome();
+      break;
+    case "queues": queues = m.queues; renderQueues(); renderHome(); break;
+    case "champselect": renderCs(m.data); break;
+    case "champions": champions = m.champions; renderGrid(); renderRecos(); break;
+    case "cs_data":
+      pickable = m.pickable; bannable = m.bannable; spells = m.spells;
+      renderGrid(); renderSpells(); break;
+    case "rune_pages": renderRunes(m.pages); break;
+    case "auto_accept": setAuto(m.value); break;
+    case "favorites": favorites = m.favorites; renderGrid(); break;
+    case "rune_data": runeStyles = m.styles; perks = m.perks; renderEditor(); renderRecos(); break;
+    case "recommended": recommended = m; renderRecos(); break;
+    case "rune_saved": if (draft && draft.id === m.pageId) { closeEditor(); toast("Page de runes enregistrée"); } break;
+    case "notify":
+      if (m.title === "Partie trouvée" && m.message.includes("automatiquement")) { accepted = true; renderReady(); toast("Partie acceptée automatiquement"); }
+      if (navigator.vibrate) navigator.vibrate([200, 80, 200]);
+      break;
+    case "error": showError(m.message); if (phase === "ReadyCheck") { accepted = false; renderReady(); } break;
+    case "pong": onPong(m.t); break;
+  }
+}
+
+function setAuto(v) { $("auto").classList.toggle("on", !!v); $("auto").dataset.value = v ? "1" : ""; }
+
+/* ---------- interactions ---------- */
+$("launch").onclick = () => { if (send({action: "launch"})) { pending($("launch")); setTimeout(() => pending($("launch"), false), 8000); } };
+$("play").onclick = () => {
+  if (!chosenQueue) { showError("Choisis un mode de jeu"); return; }
+  if (send({action: "play", queueId: chosenQueue})) pending($("play"));
+};
+$("cancel").onclick = () => { if (send({action: "cancel"})) pending($("cancel")); };
+$("accept").onclick = () => { if (send({action: "accept"})) { accepted = true; renderReady(); } };
+$("decline").onclick = () => { if (send({action: "decline"})) pending($("decline")); };
+$("auto").onclick = () => { const v = !$("auto").dataset.value; setAuto(v); send({action: "auto_accept", value: v}); };
+$("openrunes").onclick = () => openOverlay("runes");
+$("openrunes2").onclick = () => openOverlay("runes");
+$("runesback").onclick = closeOverlay;
+document.querySelectorAll(".tabs button").forEach(b => {
+  b.onclick = () => {
+    document.querySelectorAll(".tabs button").forEach(x => x.classList.toggle("on", x === b));
+    $("tab-champ").classList.toggle("hidden", b.dataset.tab !== "champ");
+    $("tab-loadout").classList.toggle("hidden", b.dataset.tab !== "loadout");
+    $("actionbar").classList.toggle("hidden", b.dataset.tab !== "champ");
+    render();
+    window.scrollTo(0, 0);
+  };
+});
+document.querySelectorAll(".slot").forEach(b => {
+  b.onclick = () => { slot = slot === +b.dataset.slot ? null : +b.dataset.slot; renderSpells(); };
+});
+$("lock").onclick = () => { const t = target(); if (t && send({action: "select", championId: t, lock: true})) pending($("lock")); };
+$("fav").onclick = () => { const t = target(); if (t) send({action: "favorite", championId: t}); };
+$("filter").oninput = applyFilter;
+$("runes").onchange = e => { if (draft) closeEditor(); send({action: "runes", pageId: +e.target.value}); };
+$("editrunes").onclick = () => openEditor();
+$("rcancel").onclick = closeEditor;
+$("rsave").onclick = () => {
+  if (!draft || !draftComplete()) return;
+  if (send({action: "save_runes", pageId: draft.id, name: $("rname").value, primary: draft.primary, sub: draft.sub, perks: draftPerks()})) pending($("rsave"));
+};
+$("pairform").onsubmit = async e => {
+  e.preventDefault();
+  const code = $("paircode").value.trim();
+  if (!/^\d{6}$/.test(code)) { showError("Le code fait 6 chiffres"); return; }
+  pending($("pairbtn"));
+  try {
+    const r = await fetch("/pair", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({code})});
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || "Code refusé");
+    token = data.token;
+    store.set("token", token);
+    $("pairform").classList.add("hidden");
+    $("status").textContent = "Connexion…";
+    connect();
+  } catch (err) {
+    showError(err.message);
+  } finally {
+    pending($("pairbtn"), false);
+  }
+};
+
+setInterval(() => {
+  if (deadline) {
+    const left = deadline - Date.now();
+    $("timer").textContent = Math.max(0, Math.ceil(left / 1000)) + " s";
+    $("bar").style.width = total ? Math.max(0, Math.min(100, left / total * 100)) + "%" : "0";
+  } else { $("timer").textContent = ""; $("bar").style.width = "0"; }
+  if (phase === "Matchmaking") tickSearch();
+  if (phase === "ReadyCheck" && !accepted) renderReady();
+}, 250);
 setInterval(() => { if (!document.hidden) ping(); }, 3000);
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) return;
@@ -479,30 +908,7 @@ document.addEventListener("visibilitychange", () => {
   else ping();
 });
 
-document.querySelectorAll("[data-action]").forEach(b => {
-  b.onclick = () => send(b.dataset.action === "lobby"
-    ? {action: "lobby", queueId: +$("queue").value}
-    : {action: b.dataset.action});
-});
-document.querySelectorAll(".slot").forEach(b => {
-  b.onclick = () => { slot = slot === +b.dataset.slot ? null : +b.dataset.slot; renderSpells(); };
-});
-$("auto").onchange = e => send({action: "auto_accept", value: e.target.checked});
-$("lock").onclick = () => { const t = target(); if (t) send({action: "select", championId: t, lock: true}); };
-$("fav").onclick = () => { const t = target(); if (t) send({action: "favorite", championId: t}); };
-$("filter").oninput = renderGrid;
-$("runes").onchange = e => { if (draft) closeEditor(); send({action: "runes", pageId: +e.target.value}); };
-$("editrunes").onclick = openEditor;
-$("rcancel").onclick = closeEditor;
-$("rsave").onclick = () => {
-  if (!draft || !draftComplete()) return;
-  send({action: "save_runes", pageId: draft.id, name: $("rname").value, primary: draft.primary, sub: draft.sub, perks: draftPerks()});
-};
-$("queue").onchange = e => { try { localStorage.setItem("queue", e.target.value); } catch (_) {} };
-setInterval(() => {
-  $("timer").textContent = deadline ? Math.max(0, Math.ceil((deadline - Date.now()) / 1000)) + " s" : "";
-}, 250);
-
+render();
 connect();
 </script>
 </body>
