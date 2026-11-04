@@ -23,6 +23,22 @@ h3{margin:16px 0 4px;font-size:14px;color:#999}
 .grid img{width:100%;display:block;border-radius:4px}
 .slot{display:flex;align-items:center;gap:8px;padding:6px}
 .slot img{width:40px;height:40px;border-radius:4px}
+.trees{display:flex;gap:6px;margin:6px 0}
+.trees button{flex:1;padding:6px;min-width:0}
+.trees button.on{outline:2px solid #c89b3c}
+.trees img{width:28px;height:28px;display:block;margin:0 auto}
+.rrow{display:flex;gap:10px;justify-content:center;margin:8px 0}
+.rrow button{width:48px;height:48px;padding:3px;border-radius:50%;opacity:.35}
+.rrow.key button{width:60px;height:60px}
+.rrow.shard button{width:36px;height:36px}
+.rrow button.on{opacity:1;outline:2px solid #c89b3c}
+.rrow img{width:100%;height:100%;display:block}
+#rdesc{min-height:2.6em;font-size:13px;color:#bbb;margin:8px 0}
+.reco{display:flex;align-items:center;gap:10px;width:100%;margin:6px 0;text-align:left}
+.reco img{width:36px;height:36px;flex:0 0 auto}
+.reco img.tree{width:20px;height:20px}
+.reco span{flex:1;font-size:14px}
+.reco small{display:block;color:#999;font-size:12px}
 </style>
 </head>
 <body>
@@ -41,7 +57,7 @@ h3{margin:16px 0 4px;font-size:14px;color:#999}
       <option value="420">Classée Solo/Duo</option>
       <option value="440">Classée Flex</option>
       <option value="400">Normale Draft</option>
-      <option value="490">Partie rapide</option>
+      <option value="480">Partie accélérée</option>
       <option value="450">ARAM</option>
     </select>
     <button data-action="lobby">Créer lobby</button>
@@ -63,7 +79,7 @@ h3{margin:16px 0 4px;font-size:14px;color:#999}
   <div class="row"><span id="csinfo"></span><span id="timer" style="text-align:right"></span></div>
   <input type="text" id="filter" placeholder="Champion" autocomplete="off">
   <div id="grid" class="grid"></div>
-  <div class="row"><button class="primary" id="lock">Verrouiller</button></div>
+  <div class="row"><button id="fav" style="flex:0 0 auto">★ Favori</button><button class="primary" id="lock">Verrouiller</button></div>
 
   <h3>Sorts d'invocateur</h3>
   <div class="row">
@@ -72,8 +88,28 @@ h3{margin:16px 0 4px;font-size:14px;color:#999}
   </div>
   <div id="spellgrid" class="grid hidden"></div>
 
+</section>
+
+<section id="runesec" class="hidden">
   <h3>Page de runes</h3>
-  <select id="runes" style="width:100%"></select>
+  <div class="row"><select id="runes"></select><button id="editrunes" style="flex:0 0 auto">Modifier</button></div>
+  <div id="recos" class="hidden">
+    <h3 id="recotitle"></h3>
+    <div id="recolist"></div>
+  </div>
+  <div id="editor" class="hidden">
+    <input type="text" id="rname" maxlength="25" placeholder="Nom de la page" autocomplete="off">
+    <h3>Arbre principal</h3>
+    <div id="rprim" class="trees"></div>
+    <div id="rprimrows"></div>
+    <h3>Arbre secondaire</h3>
+    <div id="rsub" class="trees"></div>
+    <div id="rsubrows"></div>
+    <h3>Fragments</h3>
+    <div id="rshards"></div>
+    <div id="rdesc"></div>
+    <div class="row"><button id="rcancel">Annuler</button><button class="primary" id="rsave">Enregistrer</button></div>
+  </div>
 </section>
 
 <script>
@@ -89,7 +125,8 @@ try {
 } catch (_) {}
 history.replaceState(null, "", "/");
 
-let ws, champions = [], spells = [], pickable = [], bannable = [], cs = null;
+let ws, champions = [], spells = [], pickable = [], bannable = [], favorites = [], cs = null;
+let runeStyles = [], perks = {}, runePages = [], draft = null, recommended = null, phase = "Offline";
 let selected = null, actionId = null, deadline = 0, slot = null;
 
 function send(msg) {
@@ -102,22 +139,47 @@ function setPhase(p) {
   $("lobby").classList.toggle("hidden", !["None", "Lobby", "Matchmaking"].includes(p));
   $("ready").classList.toggle("hidden", p !== "ReadyCheck");
   $("cs").classList.toggle("hidden", p !== "ChampSelect");
+  $("runesec").classList.toggle("hidden", p === "Offline");
+  phase = p;
+  renderRecos();
   if (p !== "ReadyCheck" && p !== "ChampSelect") $("banner").classList.add("hidden");
+}
+
+function target() {
+  if (selected) return selected;
+  if (!cs) return null;
+  const a = cs.action;
+  const pos = x => x > 0 ? x : null;
+  if (a) return pos(a.championId) || (a.type === "pick" ? pos(cs.championId) : null);
+  return pos(cs.championId);
+}
+
+function highlight() {
+  const t = target();
+  for (const b of $("grid").children) b.classList.toggle("sel", +b.dataset.id === t);
+  $("lock").disabled = !(cs && cs.action && t);
+  $("fav").disabled = !t;
+  $("fav").textContent = t && favorites.includes(t) ? "Retirer des favoris" : "★ Favori";
 }
 
 function renderCs(data) {
   cs = data;
   if (!data) { selected = null; actionId = null; deadline = 0; slot = null; renderSpells(); return; }
   const a = data.action;
-  if ((a && a.id) !== actionId) { actionId = a && a.id; selected = null; renderGrid(); }
+  const id = a ? a.id : null;
+  if (id !== actionId) { actionId = id; selected = null; renderGrid(); }
   deadline = Date.now() + data.timer;
-  $("csinfo").textContent = !a ? "En attente" : a.type === "ban" ? "À toi de bannir" : "À toi de choisir";
-  $("lock").disabled = !a;
+  $("csinfo").textContent = a ? (a.type === "ban" ? "À toi de bannir" : "À toi de choisir")
+    : data.phase === "PLANNING" ? "Pré-sélection" : data.phase === "FINALIZATION" ? "Finalisation" : "En attente";
+  $("lock").textContent = a ? (a.type === "ban" ? "Bannir" : "Verrouiller")
+    : data.phase === "PLANNING" ? "Pré-sélection (pas encore ton tour)" : "Pas encore ton tour";
+  highlight();
   renderSpells();
 }
 
-function tile(icon, label, isSel, onclick) {
+function tile(icon, label, isSel, onclick, id) {
   const b = document.createElement("button");
+  if (id) b.dataset.id = id;
   const img = document.createElement("img");
   img.loading = "lazy";
   img.src = icon;
@@ -127,20 +189,32 @@ function tile(icon, label, isSel, onclick) {
   return b;
 }
 
+const norm = s => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
+
 function renderGrid() {
-  const q = $("filter").value.toLowerCase();
-  const allowed = new Set(cs && cs.action && cs.action.type === "ban" ? bannable : pickable);
+  const q = norm($("filter").value);
+  const banning = cs && cs.action && cs.action.type === "ban";
+  const list = banning ? bannable : pickable;
+  const allowed = new Set(list.length > 1 ? list : []);
+  const fav = new Set(favorites);
+  const seen = new Set();
   $("grid").replaceChildren(...champions
-    .filter(c => (!allowed.size || allowed.has(c.id)) && c.name.toLowerCase().includes(q))
-    .map(c => tile(ICON(c.id), c.name, c.id === selected, () => {
+    .filter(c => (allowed.size ? allowed.has(c.id) : !seen.has(c.name) && seen.add(c.name)) && norm(c.name).includes(q))
+    .sort((a, b) => fav.has(b.id) - fav.has(a.id) || (q && norm(b.name).startsWith(q) - norm(a.name).startsWith(q)))
+    .map(c => tile(ICON(c.id), (fav.has(c.id) ? "★ " : "") + c.name, false, () => {
       selected = c.id;
       send({action: "select", championId: c.id});
-      renderGrid();
-    })));
+      highlight();
+    }, c.id)));
+  highlight();
 }
 
+let spellKey = "";
 function renderSpells() {
   const current = cs ? cs.spells : [0, 0];
+  const key = JSON.stringify([current, slot, spells.map(s => s.id)]);
+  if (key === spellKey) return;
+  spellKey = key;
   document.querySelectorAll(".slot").forEach(b => {
     const i = +b.dataset.slot;
     const s = spells.find(x => x.id === current[i]);
@@ -151,30 +225,195 @@ function renderSpells() {
   });
   $("spellgrid").classList.toggle("hidden", slot === null);
   if (slot === null) return;
-  $("spellgrid").replaceChildren(...spells.map(s => tile("/asset/" + s.icon, s.name, s.id === current[slot], () => {
-    const next = [...current];
-    const other = 1 - slot;
-    if (next[other] === s.id) next[other] = next[slot];
-    next[slot] = s.id;
+  const open = slot;
+  $("spellgrid").replaceChildren(...spells.map(s => tile("/asset/" + s.icon, s.name, s.id === current[open], () => {
+    const next = [current[0] || 0, current[1] || 0];
+    const other = 1 - open;
+    if (next[other] === s.id) next[other] = next[open];
+    next[open] = s.id;
     send({action: "spells", spell1Id: next[0], spell2Id: next[1]});
     slot = null;
     renderSpells();
   })));
 }
 
-function renderRunes(pages) {
-  $("runes").replaceChildren(...pages.map(p => {
+function renderQueues(queues) {
+  if (!queues || !queues.length) return;
+  let saved = $("queue").value;
+  try { saved = localStorage.getItem("queue") || saved; } catch (_) {}
+  $("queue").replaceChildren(...queues.map(q => {
     const o = document.createElement("option");
-    o.value = p.id;
-    o.textContent = p.name;
-    o.selected = p.current;
+    o.value = q.id;
+    o.textContent = q.name;
+    o.selected = String(q.id) === saved;
     return o;
   }));
 }
 
+function renderRunes(pages) {
+  runePages = pages;
+  $("runes").replaceChildren(...pages.map(p => {
+    const o = document.createElement("option");
+    o.value = p.id;
+    o.textContent = p.name;
+    o.selected = draft ? p.id === draft.id : p.current;
+    return o;
+  }));
+}
+
+const style = id => runeStyles.find(s => s.id === id);
+const rows = (st, test) => st ? st.slots.filter(test).map(s => s.perks) : [];
+const mainRows = st => rows(st, s => s.type !== "kStatMod");
+const subRows = st => rows(st, s => s.type === "kMixedRegularSplashable");
+const shardRows = st => rows(st, s => s.type === "kStatMod");
+
+function renderRecos() {
+  const r = recommended;
+  const show = phase === "ChampSelect" && r && r.pages.length && runeStyles.length;
+  $("recos").classList.toggle("hidden", !show);
+  if (!show) return;
+  const champ = champions.find(c => c.id === r.championId);
+  $("recotitle").textContent = `Recommandées pour ${champ ? champ.name : "ton champion"}`;
+  $("recolist").replaceChildren(...r.pages.map((p, i) => {
+    const b = document.createElement("button");
+    b.className = "reco";
+    b.dataset.reco = i;
+    const key = document.createElement("img");
+    key.src = "/asset/" + ((perks[p.perks[0]] || {}).icon || "");
+    const trees = [p.primary, p.sub].map(id => {
+      const img = document.createElement("img");
+      img.className = "tree";
+      img.src = "/asset/" + ((style(id) || {}).icon || "");
+      return img;
+    });
+    const text = document.createElement("span");
+    const small = document.createElement("small");
+    small.textContent = p.label;
+    text.append(p.keystone, small);
+    b.append(key, text, ...trees);
+    b.onclick = () => applyReco(p, champ);
+    return b;
+  }));
+}
+
+function applyReco(reco, champ) {
+  if (!openEditor()) return;
+  draft.primary = reco.primary;
+  draft.sub = reco.sub;
+  draft.prim = reco.perks.slice(0, 4);
+  draft.sec = reco.perks.slice(4, 6);
+  draft.shards = reco.perks.slice(6, 9);
+  $("rname").value = `${champ ? champ.name + " " : ""}${reco.keystone}`.slice(0, 25);
+  $("rdesc").textContent = "Recommandation chargée : vérifie puis appuie sur Enregistrer.";
+  renderEditor();
+}
+
+function openEditor() {
+  const p = runePages.find(x => x.id === +$("runes").value);
+  if (!p) return false;
+  if (!p.editable) { showError("Cette page n'est pas modifiable"); return false; }
+  if (!runeStyles.length) { showError("Données de runes pas encore chargées"); return false; }
+  draft = {id: p.id, primary: p.primary, sub: p.sub,
+    prim: p.perks.slice(0, 4), sec: p.perks.slice(4, 6), shards: p.perks.slice(6, 9)};
+  $("rname").value = p.name;
+  $("rdesc").textContent = "";
+  $("editor").classList.remove("hidden");
+  $("editrunes").classList.add("hidden");
+  renderEditor();
+  return true;
+}
+
+function closeEditor() {
+  draft = null;
+  $("editor").classList.add("hidden");
+  $("editrunes").classList.remove("hidden");
+  renderRunes(runePages);
+}
+
+function treeButtons(ids, current, onpick) {
+  return ids.map(id => {
+    const s = style(id);
+    const b = document.createElement("button");
+    const img = document.createElement("img");
+    img.src = "/asset/" + s.icon;
+    img.alt = s.name;
+    b.append(img);
+    b.title = s.name;
+    b.dataset.style = id;
+    b.classList.toggle("on", id === current);
+    b.onclick = () => onpick(id);
+    return b;
+  });
+}
+
+function perkRow(ids, isOn, onpick, cls) {
+  const row = document.createElement("div");
+  row.className = "rrow" + (cls ? " " + cls : "");
+  row.append(...ids.map(id => {
+    const p = perks[id] || {name: "?", icon: "", desc: ""};
+    const b = document.createElement("button");
+    const img = document.createElement("img");
+    img.src = "/asset/" + p.icon;
+    img.alt = p.name;
+    b.append(img);
+    b.dataset.perk = id;
+    b.classList.toggle("on", isOn(id));
+    b.onclick = () => { onpick(id); $("rdesc").textContent = `${p.name} : ${p.desc}`; renderEditor(); };
+    return b;
+  }));
+  return row;
+}
+
+function draftPerks() {
+  const sr = subRows(style(draft.sub));
+  const rowOf = id => sr.findIndex(r => r.includes(id));
+  const sec = [...draft.sec].sort((a, b) => rowOf(a) - rowOf(b));
+  return [...draft.prim, ...sec, ...draft.shards];
+}
+
+function draftComplete() {
+  const mr = mainRows(style(draft.primary)), sr = subRows(style(draft.sub)), hr = shardRows(style(draft.primary));
+  return draft.prim.length === 4 && draft.prim.every((id, i) => mr[i] && mr[i].includes(id))
+    && draft.sec.length === 2 && draft.sec.every(id => sr.some(r => r.includes(id)))
+    && new Set(draft.sec.map(id => sr.findIndex(r => r.includes(id)))).size === 2
+    && draft.shards.length === 3 && draft.shards.every((id, i) => hr[i] && hr[i].includes(id));
+}
+
+function renderEditor() {
+  if (!draft) return;
+  const prim = style(draft.primary);
+  $("rprim").replaceChildren(...treeButtons(runeStyles.map(s => s.id), draft.primary, id => {
+    if (id === draft.primary) return;
+    draft.primary = id;
+    draft.prim = [0, 0, 0, 0];
+    if (!style(id).subStyles.includes(draft.sub)) { draft.sub = style(id).subStyles[0]; draft.sec = []; }
+    renderEditor();
+  }));
+  $("rprimrows").replaceChildren(...mainRows(prim).map((ids, i) =>
+    perkRow(ids, id => draft.prim[i] === id, id => { draft.prim[i] = id; }, i === 0 ? "key" : "")));
+  $("rsub").replaceChildren(...treeButtons(prim ? prim.subStyles : [], draft.sub, id => {
+    if (id === draft.sub) return;
+    draft.sub = id;
+    draft.sec = [];
+    renderEditor();
+  }));
+  const sr = subRows(style(draft.sub));
+  $("rsubrows").replaceChildren(...sr.map(ids => perkRow(ids, id => draft.sec.includes(id), id => {
+    if (draft.sec.includes(id)) { draft.sec = draft.sec.filter(x => x !== id); return; }
+    draft.sec = draft.sec.filter(x => !ids.includes(x));
+    draft.sec.push(id);
+    if (draft.sec.length > 2) draft.sec.shift();
+  })));
+  $("rshards").replaceChildren(...shardRows(prim).map((ids, i) =>
+    perkRow(ids, id => draft.shards[i] === id, id => { draft.shards[i] = id; }, "shard")));
+  const done = draftComplete();
+  $("rsave").disabled = !done;
+  $("rsave").textContent = done ? "Enregistrer" : "Page incomplète";
+}
+
 function showError(msg) {
   $("err").textContent = msg;
-  setTimeout(() => { if ($("err").textContent === msg) $("err").textContent = ""; }, 4000);
+  setTimeout(() => { if ($("err").textContent === msg) $("err").textContent = ""; }, 8000);
 }
 
 function alertUser(title, message) {
@@ -189,9 +428,15 @@ function connect() {
     const m = JSON.parse(e.data);
     switch (m.type) {
       case "init":
-        champions = m.champions; spells = m.spells; pickable = m.pickable; bannable = m.bannable;
+        champions = m.champions; spells = m.spells; pickable = m.pickable; bannable = m.bannable; favorites = m.favorites || [];
+        runeStyles = m.rune_styles || []; perks = m.perks || {}; recommended = m.recommended;
         $("auto").checked = m.auto_accept;
-        setPhase(m.phase); renderCs(m.champselect); renderGrid(); renderRunes(m.rune_pages); break;
+        setPhase(m.phase); renderCs(m.champselect); renderGrid(); renderRunes(m.rune_pages); renderQueues(m.queues); break;
+      case "queues": renderQueues(m.queues); break;
+      case "favorites": favorites = m.favorites; renderGrid(); break;
+      case "rune_data": runeStyles = m.styles; perks = m.perks; renderEditor(); renderRecos(); break;
+      case "recommended": recommended = m; renderRecos(); break;
+      case "rune_saved": if (draft && draft.id === m.pageId) { closeEditor(); alertUser("Runes", "Page enregistrée"); } break;
       case "phase": setPhase(m.phase); break;
       case "champselect": renderCs(m.data); break;
       case "champions": champions = m.champions; renderGrid(); break;
@@ -204,8 +449,13 @@ function connect() {
       case "error": showError(m.message); break;
     }
   };
-  ws.onclose = () => {
-    $("status").textContent = "Agent injoignable (même Wi-Fi ? token valide ?)";
+  ws.onclose = async () => {
+    let msg = "Agent injoignable (même Wi-Fi ? agent lancé ?)";
+    try {
+      const r = await fetch(`/ws?token=${encodeURIComponent(token || "")}`);
+      if (r.status === 403) msg = "Non appairé : scanne le QR code affiché dans le terminal du Mac";
+    } catch (_) {}
+    $("status").textContent = msg;
     setTimeout(connect, 2000);
   };
 }
@@ -219,9 +469,17 @@ document.querySelectorAll(".slot").forEach(b => {
   b.onclick = () => { slot = slot === +b.dataset.slot ? null : +b.dataset.slot; renderSpells(); };
 });
 $("auto").onchange = e => send({action: "auto_accept", value: e.target.checked});
-$("lock").onclick = () => { if (selected) send({action: "select", championId: selected, lock: true}); };
+$("lock").onclick = () => { const t = target(); if (t) send({action: "select", championId: t, lock: true}); };
+$("fav").onclick = () => { const t = target(); if (t) send({action: "favorite", championId: t}); };
 $("filter").oninput = renderGrid;
-$("runes").onchange = e => send({action: "runes", pageId: +e.target.value});
+$("runes").onchange = e => { if (draft) closeEditor(); send({action: "runes", pageId: +e.target.value}); };
+$("editrunes").onclick = openEditor;
+$("rcancel").onclick = closeEditor;
+$("rsave").onclick = () => {
+  if (!draft || !draftComplete()) return;
+  send({action: "save_runes", pageId: draft.id, name: $("rname").value, primary: draft.primary, sub: draft.sub, perks: draftPerks()});
+};
+$("queue").onchange = e => { try { localStorage.setItem("queue", e.target.value); } catch (_) {} };
 setInterval(() => {
   $("timer").textContent = deadline ? Math.max(0, Math.ceil((deadline - Date.now()) / 1000)) + " s" : "";
 }, 250);
