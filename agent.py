@@ -71,6 +71,7 @@ state = {
 PREFERRED_QUEUES = [420, 440, 400, 480, 450]
 all_spells: list[dict] = []
 clients: set[web.WebSocketResponse] = set()
+asset_cache: dict[str, tuple[bytes, str]] = {}
 background: set[asyncio.Task] = set()
 lcu = None
 config: dict = {}
@@ -657,17 +658,24 @@ async def asset(request):
     tail = request.match_info["tail"]
     if ".." in tail or not tail.lower().endswith((".png", ".jpg", ".webp", ".svg")):
         raise web.HTTPNotFound()
-    if lcu is None:
-        raise web.HTTPServiceUnavailable()
-    async with lcu.session.get(f"{lcu.base}/lol-game-data/assets/{tail}") as r:
-        if r.status != 200:
-            raise web.HTTPNotFound()
-        svg = tail.lower().endswith(".svg")
-        return web.Response(
-            body=await r.read(),
-            content_type="image/svg+xml" if svg else r.content_type,
-            headers={"Cache-Control": "max-age=86400", "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'"},
-        )
+    cached = asset_cache.get(tail)
+    if cached is None:
+        if lcu is None:
+            raise web.HTTPServiceUnavailable()
+        async with lcu.session.get(f"{lcu.base}/lol-game-data/assets/{tail}") as r:
+            if r.status != 200:
+                raise web.HTTPNotFound()
+            svg = tail.lower().endswith(".svg")
+            cached = (await r.read(), "image/svg+xml" if svg else r.content_type)
+        asset_cache[tail] = cached
+    return web.Response(
+        body=cached[0],
+        content_type=cached[1],
+        headers={
+            "Cache-Control": "public, max-age=2592000, immutable",
+            "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'",
+        },
+    )
 
 
 async def ws_handler(request):
@@ -685,7 +693,11 @@ async def ws_handler(request):
             if msg.type != aiohttp.WSMsgType.TEXT:
                 continue
             try:
-                error = await handle_action(json.loads(msg.data))
+                data = json.loads(msg.data)
+                if data.get("action") == "ping":
+                    await ws.send_json({"type": "pong", "t": data.get("t")})
+                    continue
+                error = await handle_action(data)
             except (KeyError, ValueError, TypeError, aiohttp.ClientError, OSError) as e:
                 error = repr(e)
             if error:

@@ -42,7 +42,7 @@ h3{margin:16px 0 4px;font-size:14px;color:#999}
 </style>
 </head>
 <body>
-<div id="status">Connexion...</div>
+<div class="row" style="margin:0"><div id="status">Connexion...</div><div id="ping" style="flex:0 0 auto;font-size:12px;color:#777"></div></div>
 <div id="banner" class="hidden"></div>
 <div id="err"></div>
 <label class="row" style="justify-content:flex-start"><input type="checkbox" id="auto" style="flex:0"> Auto-accept</label>
@@ -423,6 +423,7 @@ function alertUser(title, message) {
 }
 
 function connect() {
+  if (ws && (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN)) return;
   ws = new WebSocket(`ws://${location.host}/ws?token=${encodeURIComponent(token || "")}`);
   ws.onmessage = e => {
     const m = JSON.parse(e.data);
@@ -447,8 +448,10 @@ function connect() {
       case "auto_accept": $("auto").checked = m.value; break;
       case "notify": alertUser(m.title, m.message); break;
       case "error": showError(m.message); break;
+      case "pong": onPong(m.t); break;
     }
   };
+  ws.onopen = () => { retryDelay = 250; ping(); };
   ws.onclose = async () => {
     let msg = "Agent injoignable (même Wi-Fi ? agent lancé ?)";
     try {
@@ -456,9 +459,25 @@ function connect() {
       if (r.status === 403) msg = "Non appairé : scanne le QR code affiché dans le terminal du Mac";
     } catch (_) {}
     $("status").textContent = msg;
-    setTimeout(connect, 2000);
+    clearTimeout(retryTimer);
+    retryTimer = setTimeout(connect, retryDelay);
+    retryDelay = Math.min(retryDelay * 2, 2000);
   };
 }
+
+let retryDelay = 250, retryTimer = null, rtts = [];
+function ping() { send({action: "ping", t: performance.now()}); }
+function onPong(t) {
+  rtts = [...rtts.slice(-9), performance.now() - t];
+  const sorted = [...rtts].sort((a, b) => a - b);
+  $("ping").textContent = `${Math.round(sorted[sorted.length >> 1])} ms`;
+}
+setInterval(() => { if (!document.hidden) ping(); }, 3000);
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) return;
+  if (!ws || ws.readyState === WebSocket.CLOSED || ws.readyState === WebSocket.CLOSING) { clearTimeout(retryTimer); connect(); }
+  else ping();
+});
 
 document.querySelectorAll("[data-action]").forEach(b => {
   b.onclick = () => send(b.dataset.action === "lobby"
