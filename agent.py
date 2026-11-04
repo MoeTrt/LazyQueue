@@ -70,7 +70,13 @@ state = {
     "lobby": {"queueId": 0, "inQueue": None, "estimated": None},
 }
 STATIC_DIR = BASE_DIR / "static"
-STATIC_TYPES = {".png": "image/png", ".svg": "image/svg+xml", ".webmanifest": "application/manifest+json"}
+STATIC_TYPES = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".svg": "image/svg+xml",
+    ".woff2": "font/woff2",
+    ".webmanifest": "application/manifest+json",
+}
 pair_code = f"{secrets.randbelow(10**6):06d}"
 pair_failures: list[float] = []
 PREFERRED_QUEUES = [420, 440, 400, 480, 450]
