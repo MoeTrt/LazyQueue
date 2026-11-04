@@ -5,27 +5,41 @@ import os
 import re
 import secrets
 import socket
+import ssl
 import subprocess
 import sys
 import time
 from pathlib import Path
 
 import aiohttp
+import certifi
+import psutil
 import qrcode
 from aiohttp import web
 
+
+def user_data_dir() -> Path:
+    if os.name == "nt":
+        base = Path(os.environ.get("APPDATA") or Path.home() / "AppData" / "Roaming")
+    elif sys.platform == "darwin":
+        base = Path.home() / "Library" / "Application Support"
+    else:
+        base = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
+    path = base / "LazyQueue"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
 HTTP_PORT = 8765
 BASE_DIR = Path(__file__).resolve().parent
-CONFIG_FILE = BASE_DIR / "config.json"
-DEBUG_FILE = BASE_DIR / "champselect.log"
-LOCKFILES = [
-    Path(p)
-    for p in (
-        os.environ.get("LOL_LOCKFILE"),
-        "C:/Riot Games/League of Legends/lockfile",
-        "/Applications/League of Legends.app/Contents/LoL/lockfile",
-    )
-    if p
+RES_DIR = Path(getattr(sys, "_MEIPASS", BASE_DIR))
+DATA_DIR = user_data_dir()
+CONFIG_FILE = DATA_DIR / "config.json"
+DEBUG_FILE = DATA_DIR / "champselect.log"
+LOG_FILE = DATA_DIR / "lazyqueue.log"
+DEFAULT_LOCKFILES = [
+    "C:/Riot Games/League of Legends/lockfile",
+    "/Applications/League of Legends.app/Contents/LoL/lockfile",
 ]
 RIOT_INSTALLS = (
     Path(os.environ.get("PROGRAMDATA", "C:/ProgramData")) / "Riot Games/RiotClientInstalls.json"
@@ -69,7 +83,7 @@ state = {
     "favorites": [],
     "lobby": {"queueId": 0, "inQueue": None, "estimated": None},
 }
-STATIC_DIR = BASE_DIR / "static"
+STATIC_DIR = RES_DIR / "static"
 STATIC_TYPES = {
     ".png": "image/png",
     ".jpg": "image/jpeg",
@@ -128,6 +142,9 @@ def debug_log(kind: str, **fields):
 
 
 def load_config(args: list[str]) -> dict:
+    legacy = BASE_DIR / "config.json"
+    if not CONFIG_FILE.exists() and legacy.exists() and legacy != CONFIG_FILE:
+        CONFIG_FILE.write_text(legacy.read_text())
     cfg = json.loads(CONFIG_FILE.read_text()) if CONFIG_FILE.exists() else {}
     if "--reset" in args or "token" not in cfg:
         cfg["token"] = secrets.token_urlsafe(24)
@@ -149,28 +166,44 @@ def local_ip() -> str:
 
 
 def read_process_args():
-    if os.name == "nt":
-        return None
-    try:
-        out = subprocess.run(["ps", "-A", "-ww", "-o", "args="], capture_output=True, text=True, timeout=5).stdout
-    except (OSError, subprocess.SubprocessError):
-        return None
-    for line in out.splitlines():
-        if "LeagueClientUx" in line:
-            port, token = UX_PORT_RE.search(line), UX_TOKEN_RE.search(line)
-            if port and token:
-                return int(port.group(1)), token.group(1)
+    for proc in psutil.process_iter(["name", "cmdline"]):
+        if "LeagueClientUx" not in (proc.info.get("name") or ""):
+            continue
+        args = " ".join(proc.info.get("cmdline") or [])
+        port, token = UX_PORT_RE.search(args), UX_TOKEN_RE.search(args)
+        if port and token:
+            return int(port.group(1)), token.group(1)
     return None
 
 
+def lockfile_candidates() -> list[Path]:
+    paths = []
+    try:
+        for client in json.loads(RIOT_INSTALLS.read_text()).get("associated_client", {}):
+            client = Path(client)
+            paths += [client / "lockfile", client.parent / "lockfile"]
+    except (OSError, ValueError, AttributeError):
+        pass
+    return [Path(p) for p in paths + DEFAULT_LOCKFILES if p]
+
+
 def read_lockfile():
-    for path in LOCKFILES:
-        if path.is_file():
-            try:
-                _, _, port, password, _ = path.read_text().split(":")
-                return int(port), password
-            except (OSError, ValueError):
-                break
+    forced = os.environ.get("LOL_LOCKFILE")
+    if forced:
+        try:
+            _, _, port, password, _ = Path(forced).read_text().split(":")
+            return int(port), password
+        except (OSError, ValueError):
+            return None
+    for path in lockfile_candidates():
+        if not path.is_file():
+            continue
+        try:
+            _, pid, port, password, _ = path.read_text().split(":")
+        except (OSError, ValueError):
+            continue
+        if psutil.pid_exists(int(pid)):
+            return int(port), password
     return read_process_args()
 
 
@@ -586,7 +619,7 @@ async def on_event(uri: str, event_type: str, data):
 async def lcu_loop():
     global lcu
     while True:
-        creds = read_lockfile()
+        creds = await asyncio.to_thread(read_lockfile)
         if not creds:
             await asyncio.sleep(2)
             continue
@@ -701,7 +734,7 @@ def valid_token(value: str | None) -> bool:
 
 
 async def index(request):
-    resp = web.FileResponse(BASE_DIR / "index.html", headers={"Cache-Control": "no-store"})
+    resp = web.FileResponse(RES_DIR / "index.html", headers={"Cache-Control": "no-store"})
     if valid_token(request.query.get("token")):
         set_token_cookie(resp)
     return resp
@@ -797,12 +830,35 @@ async def ws_handler(request):
     return ws
 
 
-async def main():
+def setup_output():
+    if getattr(sys, "frozen", False) or sys.stdout is None or sys.stderr is None:
+        sys.stdout = sys.stderr = open(LOG_FILE, "w", buffering=1, encoding="utf-8")
+    try:
+        sys.stdout.reconfigure(line_buffering=True)
+    except (AttributeError, ValueError):
+        pass
+
+
+def pairing_url() -> str:
+    return f"http://{local_ip()}:{HTTP_PORT}/?token={config.get('token', '')}"
+
+
+def status() -> dict:
+    return {
+        "url": pairing_url() if config else "",
+        "code": pair_code,
+        "client": lcu is not None,
+        "phase": state["phase"],
+        "phones": len(clients),
+    }
+
+
+async def main(gui: bool = False):
     global config, http, page_url
-    sys.stdout.reconfigure(line_buffering=True)
+    setup_output()
     config = load_config(sys.argv[1:])
     state["favorites"] = config.get("favorites", [])
-    http = aiohttp.ClientSession()
+    http = aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=ssl.create_default_context(cafile=certifi.where())))
     app = web.Application()
     app.router.add_get("/", index)
     app.router.add_get("/ws", ws_handler)
@@ -815,10 +871,11 @@ async def main():
     await web.TCPSite(runner, "0.0.0.0", HTTP_PORT).start()
 
     page_url = f"http://{local_ip()}:{HTTP_PORT}/"
-    url = f"{page_url}?token={config['token']}"
-    qr = qrcode.QRCode(border=1)
-    qr.add_data(url)
-    qr.print_ascii(invert=True)
+    url = pairing_url()
+    if not gui:
+        qr = qrcode.QRCode(border=1)
+        qr.add_data(url)
+        qr.print_ascii(invert=True)
     print(url)
     print(f"Code d'appairage : {pair_code}")
     if config.get("ntfy_topic"):

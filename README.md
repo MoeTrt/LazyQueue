@@ -1,50 +1,47 @@
 # LazyQueue
 
-Agent Python sur le Mac + page web servie en local pour piloter le client League of Legends depuis le téléphone (même Wi-Fi).
+Pilote ton client League of Legends depuis ton téléphone : lancer une partie, accepter, choisir et bannir ton champion, changer tes sorts et tes runes. Le téléphone et le PC doivent être sur le même Wi-Fi.
 
-## Installation (macOS)
+## Installation sur le PC
 
-    python3 -m venv .venv && source .venv/bin/activate
-    pip install -r requirements.txt
-    caffeinate -i python agent.py          # affiche le QR code, empêche la mise en veille
-    caffeinate -i python agent.py --ntfy   # active les notifications push (génère un topic ntfy)
-    python agent.py --reset                # régénère le token (invalide les téléphones appairés)
+### Windows
 
-Scanne le QR code avec le téléphone. Le token est mémorisé par le navigateur et dans config.json.
+1. Télécharge `LazyQueue.exe` et lance-le.
+2. Windows affiche « Windows a protégé votre ordinateur » (l'app n'est pas signée) : clique sur **Informations complémentaires**, puis **Exécuter quand même**.
+3. Le pare-feu demande d'autoriser l'accès réseau : coche **Réseaux privés** et valide. Sans ça, le téléphone ne peut pas joindre le PC.
 
-Premier lancement : macOS demande d'accepter les connexions entrantes pour Python. Accepte, sinon le téléphone ne joint pas l'agent.
-Si Python vient de l'installeur python.org et que ntfy renvoie une erreur SSL, lance une fois `/Applications/Python 3.x/Install Certificates.command`.
+### macOS (Apple Silicon : M1 et plus récents)
 
-## Détection du client
+1. Télécharge `LazyQueue-macOS.zip`, ouvre-le, et glisse **LazyQueue** dans **Applications**.
+2. Premier lancement : fais **clic droit → Ouvrir**, puis **Ouvrir**. Si macOS refuse, va dans **Réglages Système → Confidentialité et sécurité** et clique sur **Ouvrir quand même**.
 
-1. Lockfile : `/Applications/League of Legends.app/Contents/LoL/lockfile` (ou variable LOL_LOCKFILE).
-2. Sinon, arguments du process LeagueClientUx (`--app-port`, `--remoting-auth-token`) via `ps`.
+Une fenêtre s'ouvre avec un QR code. Garde-la ouverte pendant que tu joues : tant qu'elle est ouverte, le PC ne se met pas en veille.
 
-Lancement du client : chemin lu dans `/Users/Shared/Riot Games/RiotClientInstalls.json`, sinon variable RIOT_CLIENT.
-Coche « Rester connecté » dans le client Riot, sinon le lancement à distance s'arrête sur l'écran de login.
+## Installation sur le téléphone
 
-## Notifications
+1. Scanne le QR code de la fenêtre avec l'appareil photo, et ouvre le lien.
+2. Pour l'avoir comme une app :
+   - **iPhone** : dans Safari, bouton **Partager → Sur l'écran d'accueil**.
+   - **Android** : dans Chrome, menu **⋮ → Ajouter à l'écran d'accueil**.
+3. À la première ouverture depuis l'icône, entre le **code à 6 chiffres** affiché dans la fenêtre du PC.
 
-- Page ouverte : bannière (+ vibration sur Android, pas sur iOS).
-- Page fermée / téléphone verrouillé : app ntfy (iOS/Android), abonnement au topic affiché au démarrage. Le topic est le seul secret.
+## Bon à savoir
 
-## Lancement auto à la connexion (launchd)
+- Pour lancer le client LoL depuis le téléphone, coche **Rester connecté** dans le client Riot.
+- Tes réglages (appairage, favoris) sont dans `%APPDATA%\LazyQueue` (Windows) ou `~/Library/Application Support/LazyQueue` (macOS). Le journal de l'app est dans `lazyqueue.log`, au même endroit.
 
-Après avoir appairé le téléphone une fois, crée `~/Library/LaunchAgents/com.moe.lazyqueue.plist` :
+## Développement
 
-    <?xml version="1.0" encoding="UTF-8"?>
-    <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-    <plist version="1.0"><dict>
-      <key>Label</key><string>com.moe.lazyqueue</string>
-      <key>ProgramArguments</key><array>
-        <string>/usr/bin/caffeinate</string><string>-i</string>
-        <string>/CHEMIN/LazyQueue/.venv/bin/python</string>
-        <string>/CHEMIN/LazyQueue/agent.py</string>
-      </array>
-      <key>RunAtLoad</key><true/>
-      <key>KeepAlive</key><true/>
-      <key>StandardOutPath</key><string>/tmp/lazyqueue.log</string>
-      <key>StandardErrorPath</key><string>/tmp/lazyqueue.log</string>
-    </dict></plist>
+    python3 -m venv .venv
+    .venv/bin/pip install -r requirements.txt
+    .venv/bin/python app.py      # fenêtre avec QR code
+    .venv/bin/python agent.py    # version terminal (QR en texte)
 
-Puis `launchctl load ~/Library/LaunchAgents/com.moe.lazyqueue.plist`. Le QR et l'URL sont dans /tmp/lazyqueue.log.
+Options de `agent.py` : `--reset` régénère le token (désappaire les téléphones), `--ntfy` active les notifications push via l'app ntfy, `--no-ntfy` les désactive.
+
+### Construire l'application
+
+    .venv/bin/pip install -r requirements-build.txt
+    .venv/bin/python build.py
+
+Résultat dans `dist/` : `LazyQueue-macOS.zip` sur macOS, `LazyQueue.exe` sur Windows (sous Windows, remplace `.venv/bin/` par `.venv\Scripts\`). PyInstaller construit pour l'OS sur lequel il tourne : pour Windows, construis sur un PC Windows, ou lance le workflow GitHub Actions `Build` (onglet Actions du dépôt GitHub), qui produit les deux versions.
