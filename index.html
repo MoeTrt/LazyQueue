@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LazyQueue</title>
+<style>
+body{margin:0;padding:16px;font:16px system-ui,sans-serif;background:#0e1116;color:#e6e6e6}
+button,select,input{font:inherit;padding:12px;border-radius:8px;border:1px solid #333;background:#1b2028;color:inherit}
+button:disabled{opacity:.4}
+button.primary{background:#c89b3c;color:#111;border:0;font-weight:600}
+input[type=text]{width:100%;box-sizing:border-box;margin:8px 0}
+h3{margin:16px 0 4px;font-size:14px;color:#999}
+.row{display:flex;gap:8px;margin:8px 0;align-items:center}
+.row>*{flex:1}
+.hidden{display:none}
+#status{font-size:20px;font-weight:600}
+#err{color:#ff6b6b;min-height:1.2em;margin:4px 0}
+#banner{background:#c89b3c;color:#111;padding:12px;border-radius:8px;font-weight:600}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(64px,1fr));gap:6px;max-height:45vh;overflow-y:auto}
+.grid button{padding:4px;font-size:11px;overflow:hidden}
+.grid button.sel,.slot.sel{outline:2px solid #c89b3c}
+.grid img{width:100%;display:block;border-radius:4px}
+.slot{display:flex;align-items:center;gap:8px;padding:6px}
+.slot img{width:40px;height:40px;border-radius:4px}
+</style>
+</head>
+<body>
+<div id="status">Connexion...</div>
+<div id="banner" class="hidden"></div>
+<div id="err"></div>
+<label class="row" style="justify-content:flex-start"><input type="checkbox" id="auto" style="flex:0"> Auto-accept</label>
+
+<section id="offline" class="hidden">
+  <button class="primary" data-action="launch" style="width:100%">Lancer le client</button>
+</section>
+
+<section id="lobby" class="hidden">
+  <div class="row">
+    <select id="queue">
+      <option value="420">Classée Solo/Duo</option>
+      <option value="440">Classée Flex</option>
+      <option value="400">Normale Draft</option>
+      <option value="490">Partie rapide</option>
+      <option value="450">ARAM</option>
+    </select>
+    <button data-action="lobby">Créer lobby</button>
+  </div>
+  <div class="row">
+    <button class="primary" data-action="search">Lancer</button>
+    <button data-action="cancel">Annuler</button>
+  </div>
+</section>
+
+<section id="ready" class="hidden">
+  <div class="row">
+    <button class="primary" data-action="accept">Accepter</button>
+    <button data-action="decline">Refuser</button>
+  </div>
+</section>
+
+<section id="cs" class="hidden">
+  <div class="row"><span id="csinfo"></span><span id="timer" style="text-align:right"></span></div>
+  <input type="text" id="filter" placeholder="Champion" autocomplete="off">
+  <div id="grid" class="grid"></div>
+  <div class="row"><button class="primary" id="lock">Verrouiller</button></div>
+
+  <h3>Sorts d'invocateur</h3>
+  <div class="row">
+    <button class="slot" data-slot="0"></button>
+    <button class="slot" data-slot="1"></button>
+  </div>
+  <div id="spellgrid" class="grid hidden"></div>
+
+  <h3>Page de runes</h3>
+  <select id="runes" style="width:100%"></select>
+</section>
+
+<script>
+const $ = id => document.getElementById(id);
+const ICON = id => `/asset/v1/champion-icons/${id}.png`;
+const PHASES = {Offline: "Client fermé", None: "Menu", Lobby: "Lobby", Matchmaking: "Recherche...",
+  ReadyCheck: "Partie trouvée", ChampSelect: "Sélection", InProgress: "En jeu",
+  WaitingForStats: "Fin de partie", EndOfGame: "Fin de partie"};
+
+let token = new URLSearchParams(location.search).get("token");
+try {
+  if (token) localStorage.setItem("token", token); else token = localStorage.getItem("token");
+} catch (_) {}
+history.replaceState(null, "", "/");
+
+let ws, champions = [], spells = [], pickable = [], bannable = [], cs = null;
+let selected = null, actionId = null, deadline = 0, slot = null;
+
+function send(msg) {
+  if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
+}
+
+function setPhase(p) {
+  $("status").textContent = PHASES[p] || p;
+  $("offline").classList.toggle("hidden", p !== "Offline");
+  $("lobby").classList.toggle("hidden", !["None", "Lobby", "Matchmaking"].includes(p));
+  $("ready").classList.toggle("hidden", p !== "ReadyCheck");
+  $("cs").classList.toggle("hidden", p !== "ChampSelect");
+  if (p !== "ReadyCheck" && p !== "ChampSelect") $("banner").classList.add("hidden");
+}
+
+function renderCs(data) {
+  cs = data;
+  if (!data) { selected = null; actionId = null; deadline = 0; slot = null; renderSpells(); return; }
+  const a = data.action;
+  if ((a && a.id) !== actionId) { actionId = a && a.id; selected = null; renderGrid(); }
+  deadline = Date.now() + data.timer;
+  $("csinfo").textContent = !a ? "En attente" : a.type === "ban" ? "À toi de bannir" : "À toi de choisir";
+  $("lock").disabled = !a;
+  renderSpells();
+}
+
+function tile(icon, label, isSel, onclick) {
+  const b = document.createElement("button");
+  const img = document.createElement("img");
+  img.loading = "lazy";
+  img.src = icon;
+  b.append(img, label);
+  if (isSel) b.className = "sel";
+  b.onclick = onclick;
+  return b;
+}
+
+function renderGrid() {
+  const q = $("filter").value.toLowerCase();
+  const allowed = new Set(cs && cs.action && cs.action.type === "ban" ? bannable : pickable);
+  $("grid").replaceChildren(...champions
+    .filter(c => (!allowed.size || allowed.has(c.id)) && c.name.toLowerCase().includes(q))
+    .map(c => tile(ICON(c.id), c.name, c.id === selected, () => {
+      selected = c.id;
+      send({action: "select", championId: c.id});
+      renderGrid();
+    })));
+}
+
+function renderSpells() {
+  const current = cs ? cs.spells : [0, 0];
+  document.querySelectorAll(".slot").forEach(b => {
+    const i = +b.dataset.slot;
+    const s = spells.find(x => x.id === current[i]);
+    b.classList.toggle("sel", slot === i);
+    b.replaceChildren();
+    if (s) { const img = document.createElement("img"); img.src = "/asset/" + s.icon; b.append(img); }
+    b.append(s ? s.name : (i ? "F" : "D"));
+  });
+  $("spellgrid").classList.toggle("hidden", slot === null);
+  if (slot === null) return;
+  $("spellgrid").replaceChildren(...spells.map(s => tile("/asset/" + s.icon, s.name, s.id === current[slot], () => {
+    const next = [...current];
+    const other = 1 - slot;
+    if (next[other] === s.id) next[other] = next[slot];
+    next[slot] = s.id;
+    send({action: "spells", spell1Id: next[0], spell2Id: next[1]});
+    slot = null;
+    renderSpells();
+  })));
+}
+
+function renderRunes(pages) {
+  $("runes").replaceChildren(...pages.map(p => {
+    const o = document.createElement("option");
+    o.value = p.id;
+    o.textContent = p.name;
+    o.selected = p.current;
+    return o;
+  }));
+}
+
+function showError(msg) {
+  $("err").textContent = msg;
+  setTimeout(() => { if ($("err").textContent === msg) $("err").textContent = ""; }, 4000);
+}
+
+function alertUser(title, message) {
+  $("banner").textContent = `${title} - ${message}`;
+  $("banner").classList.remove("hidden");
+  if (navigator.vibrate) navigator.vibrate([300, 100, 300]);
+}
+
+function connect() {
+  ws = new WebSocket(`ws://${location.host}/ws?token=${encodeURIComponent(token || "")}`);
+  ws.onmessage = e => {
+    const m = JSON.parse(e.data);
+    switch (m.type) {
+      case "init":
+        champions = m.champions; spells = m.spells; pickable = m.pickable; bannable = m.bannable;
+        $("auto").checked = m.auto_accept;
+        setPhase(m.phase); renderCs(m.champselect); renderGrid(); renderRunes(m.rune_pages); break;
+      case "phase": setPhase(m.phase); break;
+      case "champselect": renderCs(m.data); break;
+      case "champions": champions = m.champions; renderGrid(); break;
+      case "cs_data":
+        pickable = m.pickable; bannable = m.bannable; spells = m.spells;
+        renderGrid(); renderSpells(); break;
+      case "rune_pages": renderRunes(m.pages); break;
+      case "auto_accept": $("auto").checked = m.value; break;
+      case "notify": alertUser(m.title, m.message); break;
+      case "error": showError(m.message); break;
+    }
+  };
+  ws.onclose = () => {
+    $("status").textContent = "Agent injoignable (même Wi-Fi ? token valide ?)";
+    setTimeout(connect, 2000);
+  };
+}
+
+document.querySelectorAll("[data-action]").forEach(b => {
+  b.onclick = () => send(b.dataset.action === "lobby"
+    ? {action: "lobby", queueId: +$("queue").value}
+    : {action: b.dataset.action});
+});
+document.querySelectorAll(".slot").forEach(b => {
+  b.onclick = () => { slot = slot === +b.dataset.slot ? null : +b.dataset.slot; renderSpells(); };
+});
+$("auto").onchange = e => send({action: "auto_accept", value: e.target.checked});
+$("lock").onclick = () => { if (selected) send({action: "select", championId: selected, lock: true}); };
+$("filter").oninput = renderGrid;
+$("runes").onchange = e => send({action: "runes", pageId: +e.target.value});
+setInterval(() => {
+  $("timer").textContent = deadline ? Math.max(0, Math.ceil((deadline - Date.now()) / 1000)) + " s" : "";
+}, 250);
+
+connect();
+</script>
+</body>
+</html>
